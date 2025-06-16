@@ -184,6 +184,7 @@ def clean_and_filter(matrix, sample_labels, target_umi_min, injection_umi_min,
     - Remove rows where any value >= the corresponding 'inj' column value
     - Apply UMI threshold and optionally remove high UMI outliers
     """
+    
     # 🚨 Step 1: Remove headers & barcode column
     matrix = matrix[1:, 1:]
     print(f"🔍 Step 1: Removed headers & barcode. Shape: {matrix.shape}")

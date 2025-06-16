@@ -1204,7 +1204,7 @@ if df_scaled.shape[0] < 2:
 
 # Draw clustermap
 clusterfig = sns.clustermap(
-    df_scaled_np,
+    df_scaled,
     col_cluster=False,
     metric='cosine',
     method='average',
@@ -1260,7 +1260,7 @@ df_han_np = df_han.to_numpy(copy=True).astype(float)
 
 # Draw Han-style heatmap
 clusterfig_han = sns.clustermap(
-    df_han_np,
+    df_han,
     row_linkage=row_linkage,
     col_cluster=False,
     cmap=han_cm,

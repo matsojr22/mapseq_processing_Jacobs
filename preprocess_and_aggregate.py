@@ -115,7 +115,8 @@ def main(input_dir, output_dir, fallback_threshold):
         df_aligned = df.copy()
         for col in column_order:
             if col not in df_aligned.columns:
-                df_aligned[col] = 0
+                #df_aligned[col] = 0    #fill with zeros as needed
+                df_aligned[col] = np.nan    #keep zeros where known and keep NaNs where known
         df_aligned = df_aligned[column_order]  # preserve original order
         aligned_dfs.append(df_aligned)
 

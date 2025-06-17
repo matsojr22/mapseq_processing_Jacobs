@@ -196,7 +196,7 @@ def clean_and_filter(matrix, sample_labels, target_umi_min, injection_umi_min,
     # 🚨 Step 2b: Remove rows where no target regions are > min_target_count
     non_neg_inj_cols = [i for i, label in enumerate(sample_labels) if label not in ["neg", "inj"]]
     if non_neg_inj_cols:
-        target_max = np.max(matrix[:, non_neg_inj_cols], axis=1)
+        target_max = np.nanmax(matrix[:, non_neg_inj_cols], axis=1)
         matrix = matrix[target_max >= min_target_count]
         print(f"🔍 Step 2b: Removed rows with no targets > {min_target_count}. Shape: {matrix.shape}")
     else:
@@ -231,7 +231,7 @@ def clean_and_filter(matrix, sample_labels, target_umi_min, injection_umi_min,
         non_neg_inj_cols = [i for i, label in enumerate(sample_labels) if label not in ["neg", "inj"]]
         inj_values = matrix[:, inj_col_idx]
         if non_neg_inj_cols:
-            max_target_values = np.max(matrix[:, non_neg_inj_cols], axis=1)
+            max_target_values = np.nanmax(matrix[:, non_neg_inj_cols], axis=1)
             with np.errstate(divide='ignore', invalid='ignore'):
                 valid_mask = inj_values >= (max_target_values * min_body_to_target_ratio)
                 valid_mask = np.nan_to_num(valid_mask, nan=False)
@@ -248,7 +248,7 @@ def clean_and_filter(matrix, sample_labels, target_umi_min, injection_umi_min,
         neg_values = matrix[:, neg_columns]
         neg_values = neg_values[~np.isnan(neg_values)]
         if neg_values.size > 0:
-            max_neg_value = np.max(neg_values)
+            max_neg_value = np.nanmax(neg_values)
         else:
             max_neg_value = target_umi_min
             print("⚠ WARNING: 'neg' column contains only NaN values. Using argparse default.")

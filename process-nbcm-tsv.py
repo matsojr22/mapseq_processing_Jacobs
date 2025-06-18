@@ -1957,7 +1957,6 @@ plt.close()
 
 df.astype(bool).sum()
 
-
 ## Build a summary data table for scripted runs or sequential runs in the same directory.
 def append_summary_wide_format_extended(
     args, projections, total_projections, observed_cells, N0_value, pe_num, 
@@ -1965,8 +1964,9 @@ def append_summary_wide_format_extended(
 ):
     import os
     import pandas as pd
-    from scipy.stats import entropy
     import numpy as np
+    import csv
+    from scipy.stats import entropy
 
     if not isinstance(normalized_matrix, pd.DataFrame):
         raise ValueError("normalized_matrix must be a pandas DataFrame")
@@ -1975,16 +1975,13 @@ def append_summary_wide_format_extended(
     summary_path = os.path.normpath(os.path.join(output_dir, "projection_summary.csv"))
     write_header = not os.path.exists(summary_path)
 
-    # Region-wise statistics
     mean_umis = dict(zip(columns, normalized_matrix.mean(axis=0)))
     proj_counts = projections
 
-    # Entropy
     counts = np.array(list(proj_counts.values()), dtype=float)
     probs = counts / counts.sum() if counts.sum() > 0 else np.ones_like(counts) / len(counts)
     norm_entropy = entropy(probs) / np.log(len(probs)) if len(probs) > 1 else 0.0
 
-    # Build row
     row = {
         "Sample": args.sample_name,
         "injection min": args.injection_umi_min,
@@ -2000,61 +1997,86 @@ def append_summary_wide_format_extended(
         "p_e": pe_num,
         "k_consensus": consensus_k,
         "Entropy": norm_entropy,
-        "MotifOverrepresented": "|".join(motif_over) if motif_over else "",
-        "MotifUnderrepresented": "|".join(motif_under) if motif_under else "",
+        "MotifOverrepresented": " ".join(motif_over) if motif_over else "",
+        "MotifUnderrepresented": " ".join(motif_under) if motif_under else "",
     }
 
     for region in columns:
         row[f"ProjCount_{region}"] = int(proj_counts.get(region, 0))
         row[f"MeanUMI_{region}"] = float(mean_umis.get(region, 0.0))
 
-    # Write row to CSV
     df_row = pd.DataFrame([row])
-    df_row.to_csv(summary_path, mode='a', header=write_header, index=False, quoting=1)
+    df_row.to_csv(summary_path, mode='a', header=write_header, index=False, quoting=csv.QUOTE_ALL)
     print(f"🧪 MotifOver: {motif_over}")
     print(f"🧪 MotifUnder: {motif_under}")
     print(f"📈 Summary extended metrics appended to {summary_path}")
 
 # ----------------------
-# SAFE motif extraction and summary call (from analysis subfolder)
+# SAFE motif extraction using the final upsetplot CSV (trusted final logic)
 # ----------------------
+
 import os
 import pandas as pd
+import numpy as np
 
-motif_file = os.path.normpath(
-    os.path.join(out_dir, "analysis", f"{args.sample_name}_motif_significance.csv")
+upset_file = os.path.normpath(
+    os.path.join(out_dir, "analysis", f"{args.sample_name}_upsetplot.csv")
 )
+
 motif_over, motif_under = [], []
 
 try:
-    if os.path.exists(motif_file):
-        print(f"✅ Found motif file: {motif_file}")
-        df_motifs = pd.read_csv(motif_file)
+    if os.path.exists(upset_file):
+        print(f"✅ Found motif file: {upset_file}")
+        df_upset = pd.read_csv(upset_file)
 
-        print("📂 Columns:", df_motifs.columns.tolist())
-        print("🧬 Unique 'significant' values:", df_motifs['significant'].unique())
+        # Sanitize column names
+        df_upset.columns = [col.strip().lower() for col in df_upset.columns]
 
-        # Robust boolean coercion for 'significant' column
-        df_motifs["significant"] = df_motifs["significant"].astype(str).str.lower().isin(["true", "1"])
+        # Rename columns to standardized lowercase names
+        df_upset.rename(columns={
+            "motifs": "motif",
+            "p-value": "pval",
+            "observed": "observed",
+            "expected": "expected"
+        }, inplace=True)
 
-        motif_over = df_motifs.loc[
-            (df_motifs["significant"]) & (df_motifs["observed"] > df_motifs["expected"]),
-            "motif"
-        ].dropna().astype(str).tolist()
+        # Validate required columns exist
+        required_cols = {"observed", "expected", "pval", "motif"}
+        if not required_cols.issubset(set(df_upset.columns)):
+            raise ValueError(f"Missing expected columns in upsetplot CSV: {required_cols - set(df_upset.columns)}")
 
-        motif_under = df_motifs.loc[
-            (df_motifs["significant"]) & (df_motifs["observed"] < df_motifs["expected"]),
-            "motif"
-        ].dropna().astype(str).tolist()
+        # Ensure types are correct
+        df_upset["observed"] = pd.to_numeric(df_upset["observed"], errors="coerce")
+        df_upset["expected"] = pd.to_numeric(df_upset["expected"], errors="coerce")
+        df_upset["pval"] = pd.to_numeric(df_upset["pval"], errors="coerce")
+
+        corrected_threshold = 0.05
+
+        motif_over = (
+            df_upset.loc[
+                (df_upset["observed"] > df_upset["expected"]) & (df_upset["pval"] < corrected_threshold),
+                "motif"
+            ]
+            .dropna().astype(str).tolist()
+        )
+
+        motif_under = (
+            df_upset.loc[
+                (df_upset["observed"] < df_upset["expected"]) & (df_upset["pval"] < corrected_threshold),
+                "motif"
+            ]
+            .dropna().astype(str).tolist()
+        )
 
         print(f"🧪 MotifOver: {motif_over}")
         print(f"🧪 MotifUnder: {motif_under}")
 
     else:
-        print(f"⚠️ Motif file not found at expected path: {motif_file}")
+        print(f"⚠️ Motif file not found at expected path: {upset_file}")
 
 except Exception as e:
-    print(f"❌ Failed to load motif file {motif_file}: {e}")
+    print(f"❌ Failed to load upsetplot file {upset_file}: {e}")
     motif_over, motif_under = [], []
 
 # ----------------------
@@ -2068,7 +2090,7 @@ append_summary_wide_format_extended(
     N0_value,
     pe_num,
     consensus_k,
-    normalized_matrix,  # NOTE: Pass DataFrame directly, not .to_numpy()
+    normalized_matrix,
     out_dir,
     motif_over,
     motif_under

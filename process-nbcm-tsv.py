@@ -290,7 +290,7 @@ def clean_and_filter(matrix, sample_labels, target_umi_min, injection_umi_min,
     print(f"User defined or argparse minimum default(2): {target_umi_min}")
     print(f"Max Negative Control Value: {max_neg_value}")
 
-    # 🚨 Step 6b: Apply UMI threshold
+    # 🚨 Step 6b: Choose UMI threshold
     if force_user_threshold:
         final_umi_threshold = target_umi_min
         print(f"⚠️ Step 6b: Forcing user-defined UMI threshold: {final_umi_threshold}")
@@ -300,8 +300,13 @@ def clean_and_filter(matrix, sample_labels, target_umi_min, injection_umi_min,
               f"and dynamic= ({dynamic_threshold:.4f}) ➜ Final threshold choice: {final_umi_threshold:.4f}")
 
     # 🚨 Step 6c: Remove rows that became all zeros after thresholding
+    matrix[matrix < final_umi_threshold] = 0
+    num_zero_after_threshold = np.sum(np.sum(matrix > 0, axis=1) == 0)
+    print(f"✅ CHECK THIS Step 6c: Applied threshold ({final_umi_threshold}). New zero rows: {num_zero_after_threshold}")
+    
+    # 🚨 Step 6d: Remove rows that became all zeros after thresholding
     matrix = matrix[np.sum(matrix > 0, axis=1) > 0]
-    print(f"🔍 Step 6c: Removed new zero rows. Shape: {matrix.shape}")
+    print(f"🔍 Step 6d: Removed new zero rows. Shape: {matrix.shape}")
 
     # 🚨 Step 7: Apply optional high-UMI outlier filtering
     if apply_outlier_filtering:

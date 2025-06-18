@@ -1987,11 +1987,12 @@ def append_summary_wide_format_extended(
     # Build row
     row = {
         "Sample": args.sample_name,
-        "i": args.injection_umi_min,
-        "r": args.min_body_to_target_ratio,
-        "t": args.min_target_count,
-        "u": args.target_umi_min,
+        "injection min": args.injection_umi_min,
+        "target:inj ratio": args.min_body_to_target_ratio,
+        "at least 1 target minimum": args.min_target_count,
+        "user umi min": args.target_umi_min,
         "force_user_threshold": args.force_user_threshold,
+        "threshold used": final_umi_threshold,
         "Labels": ",".join(columns),
         "TotalProjections": total_projections,
         "ObservedCells": observed_cells,

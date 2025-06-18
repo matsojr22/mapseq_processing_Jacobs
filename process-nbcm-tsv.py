@@ -1961,15 +1961,18 @@ df.astype(bool).sum()
 ## Build a summary data table for scripted runs or sequential runs in the same directory.
 def append_summary_wide_format_extended(
     args, projections, total_projections, observed_cells, N0_value, pe_num, 
-    consensus_k, normalized_matrix, columns, output_dir,
-    motif_over, motif_under
+    consensus_k, normalized_matrix, output_dir, motif_over, motif_under
 ):
     import os
     import pandas as pd
     from scipy.stats import entropy
     import numpy as np
 
-    summary_path = os.path.join(output_dir, "projection_summary.csv")
+    if not isinstance(normalized_matrix, pd.DataFrame):
+        raise ValueError("normalized_matrix must be a pandas DataFrame")
+
+    columns = normalized_matrix.columns.tolist()
+    summary_path = os.path.normpath(os.path.join(output_dir, "projection_summary.csv"))
     write_header = not os.path.exists(summary_path)
 
     # Region-wise statistics
@@ -1989,62 +1992,69 @@ def append_summary_wide_format_extended(
         "t": args.min_target_count,
         "u": args.target_umi_min,
         "force_user_threshold": args.force_user_threshold,
-        "Labels": '"' + ",".join(columns) + '"',
+        "Labels": ",".join(columns),
         "TotalProjections": total_projections,
         "ObservedCells": observed_cells,
         "N0": float(N0_value) if N0_value else np.nan,
         "p_e": pe_num,
         "k_consensus": consensus_k,
         "Entropy": norm_entropy,
-        "MotifOverrepresented": '"' + "|".join(motif_over) + '"' if motif_over else '""',
-        "MotifUnderrepresented": '"' + "|".join(motif_under) + '"' if motif_under else '""',
+        "MotifOverrepresented": "|".join(motif_over) if motif_over else "",
+        "MotifUnderrepresented": "|".join(motif_under) if motif_under else "",
     }
 
     for region in columns:
-        row[f"ProjCount_{region}"] = int(proj_counts[region]) if region in proj_counts else 0
-        row[f"MeanUMI_{region}"] = float(mean_umis[region]) if region in mean_umis else 0.0
+        row[f"ProjCount_{region}"] = int(proj_counts.get(region, 0))
+        row[f"MeanUMI_{region}"] = float(mean_umis.get(region, 0.0))
 
-    # Sanitize possible bad keys
-    row = {k: v for k, v in row.items() if k != ""}
-
-    # Write row
-    pd.DataFrame([row]).to_csv(summary_path, mode='a', header=write_header, index=False, quoting=1)
+    # Write row to CSV
+    df_row = pd.DataFrame([row])
+    df_row.to_csv(summary_path, mode='a', header=write_header, index=False, quoting=1)
+    print(f"🧪 MotifOver: {motif_over}")
+    print(f"🧪 MotifUnder: {motif_under}")
     print(f"📈 Summary extended metrics appended to {summary_path}")
 
+# ----------------------
+# SAFE motif extraction and summary call (from analysis subfolder)
+# ----------------------
+import os
+import pandas as pd
 
-# ----------------------
-# SAFE motif extraction and summary call
-# ----------------------
-motif_file = os.path.join(out_dir, f"{args.sample_name}_motif_significance.csv")
+motif_file = os.path.normpath(
+    os.path.join(out_dir, "analysis", f"{args.sample_name}_motif_significance.csv")
+)
 motif_over, motif_under = [], []
 
 try:
     if os.path.exists(motif_file):
+        print(f"✅ Found motif file: {motif_file}")
         df_motifs = pd.read_csv(motif_file)
 
-        if "significant" in df_motifs.columns:
-            # Normalize to boolean from string/integer formats
-            df_motifs["significant"] = df_motifs["significant"].apply(lambda x: str(x).lower() in ["true", "1"])
+        print("📂 Columns:", df_motifs.columns.tolist())
+        print("🧬 Unique 'significant' values:", df_motifs['significant'].unique())
 
-            motif_over = (
-                df_motifs[
-                    (df_motifs["significant"]) &
-                    (df_motifs["observed"] > df_motifs["expected"])
-                ]["motif"]
-                .dropna().astype(str).tolist()
-            )
+        # Robust boolean coercion for 'significant' column
+        df_motifs["significant"] = df_motifs["significant"].astype(str).str.lower().isin(["true", "1"])
 
-            motif_under = (
-                df_motifs[
-                    (df_motifs["significant"]) &
-                    (df_motifs["observed"] < df_motifs["expected"])
-                ]["motif"]
-                .dropna().astype(str).tolist()
-            )
+        motif_over = df_motifs.loc[
+            (df_motifs["significant"]) & (df_motifs["observed"] > df_motifs["expected"]),
+            "motif"
+        ].dropna().astype(str).tolist()
+
+        motif_under = df_motifs.loc[
+            (df_motifs["significant"]) & (df_motifs["observed"] < df_motifs["expected"]),
+            "motif"
+        ].dropna().astype(str).tolist()
+
+        print(f"🧪 MotifOver: {motif_over}")
+        print(f"🧪 MotifUnder: {motif_under}")
+
+    else:
+        print(f"⚠️ Motif file not found at expected path: {motif_file}")
+
 except Exception as e:
-    print(f"⚠️ Warning: Could not load motif significance file for {args.sample_name}: {e}")
+    print(f"❌ Failed to load motif file {motif_file}: {e}")
     motif_over, motif_under = [], []
-
 
 # ----------------------
 # Call summary writer
@@ -2057,8 +2067,7 @@ append_summary_wide_format_extended(
     N0_value,
     pe_num,
     consensus_k,
-    normalized_matrix.to_numpy(),
-    normalized_matrix.columns.tolist(),
+    normalized_matrix,  # NOTE: Pass DataFrame directly, not .to_numpy()
     out_dir,
     motif_over,
     motif_under

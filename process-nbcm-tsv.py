@@ -679,6 +679,7 @@ os.makedirs(analysis_dir, exist_ok=True)
 
 #Where do you want the analysis output to go?
 plot_dir = analysis_dir
+csv_output_dir = os.path.join(plot_dir, "motif_raw_data")
 
 n0 = observed_cells #import from stats at beginning
 
@@ -1093,68 +1094,101 @@ for ext in ["pdf", "svg", "png"]:
     fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_effect_significance.{ext}")))
 
 
-def gen_per_cell_plot(df,cell_ids,motif_labels,dcounts,expected,savepath=plot_dir, hide_singlets=True,figsize=(16,35)):
+#per cell projection strength
+def gen_per_cell_plot(df, cell_ids, motif_labels, dcounts, expected,
+                      savepath=plot_dir, hide_singlets=True, figsize=(16, 35),
+                      sample_name=None, export_csvs=False, csv_dir=None):
     """
-    This plots each cell of a given motif on the same plot as an individual line
-    Each line's points are the corresponding projection strengths at that region
-    So this plot shows the projection strengths of all the cells for each motif
+    This plots each cell of a given motif on the same plot as an individual line.
+    Each line's points are the corresponding projection strengths at that region.
+    Now also optionally saves raw data per motif as CSVs using the sample_name.
+    
+    Parameters:
+        ...
+        export_csvs : bool
+            Whether to export raw data as CSVs.
+        csv_dir : str or None
+            Optional directory to save per-motif CSVs. Defaults to savepath's directory.
     """
-    if hide_singlets: #Only show motifs with two or more regions
-        mask = [i for (i,l) in enumerate(motif_labels) if len(l) > 1]
-        cell_ids = subset_list(cell_ids,mask)
-        
-    non0cell_ids = [(i,x) for (i,x) in enumerate(cell_ids) if len(x) > 0]
-    dcounts = subset_list(dcounts,mask)
-    exp_counts_ = subset_list(expected,mask)
-    obs_ex = []
-    for i,x in non0cell_ids:
-        oe = (dcounts[i],exp_counts_[i])
-        obs_ex.append(oe)
-    num_plots = len(non0cell_ids)
-    plot_titles = concatenate_list_data(subset_list(motif_labels,mask))
-    #print(num_plots)
+    import pandas as pd
+    import os
+    import re
+
+    raw_data_output = {}
+
+    if hide_singlets:  # Only show motifs with two or more regions
+        mask = [i for (i, l) in enumerate(motif_labels) if len(l) > 1]
+        cell_ids = subset_list(cell_ids, mask)
+        dcounts = subset_list(dcounts, mask)
+        expected = subset_list(expected, mask)
+        motif_labels = subset_list(motif_labels, mask)
+
+    non0cell_ids = [(i, x) for (i, x) in enumerate(cell_ids) if len(x) > 0]
+    obs_ex = [(dcounts[i], expected[i]) for i, _ in non0cell_ids]
+    plot_titles = concatenate_list_data(motif_labels)
+
     ncols = 2
-    nrows = int(np.ceil(num_plots / ncols))
+    nrows = int(np.ceil(len(non0cell_ids) / ncols))
     fig = plt.figure(figsize=figsize)
+
+    # Determine CSV output directory
+    if export_csvs:
+        csv_outdir = csv_dir if csv_dir else os.path.dirname(savepath)
+        os.makedirs(csv_outdir, exist_ok=True)
+
     n = 1
-    for cellids_ in non0cell_ids:
-        """if n > 2:
-            break"""
-        i,cellids = cellids_
-        ax = fig.add_subplot(nrows,ncols,n)
+    for i, cellids in non0cell_ids:
+        ax = fig.add_subplot(nrows, ncols, n)
         title = plot_titles[i]
         ax.set_title(title)
         ax.set_xticks(np.arange(df.shape[1]))
-        ax.set_xticklabels(df.columns.to_list())
+        ax.set_xticklabels(df.columns.to_list(), rotation=90)
         ax.set_ylabel("Projection Strength")
-        x = df.iloc[cellids,:].to_numpy()
-        ## add observed/expected legend
-        obs,ex = obs_ex[n-1]
-        textstr = 'Observed: {} \n Expected: {}'.format(int(obs),int(ex))
-        # these are matplotlib.patch.Patch properties
+
+        x = df.iloc[cellids, :].to_numpy()
+
+        # ⬇️ OPTIONAL CSV EXPORT
+        if export_csvs and sample_name:
+            df_raw = pd.DataFrame(
+                x,
+                index=[f'cell_{cid}' for cid in cellids],
+                columns=df.columns
+            )
+            safe_title = re.sub(r'\W+', '_', title)[:100]
+            fname = f"{sample_name}_{safe_title}_raw_data.csv"
+            full_path = os.path.join(csv_outdir, fname)
+            df_raw.to_csv(full_path)
+            print(f"[CSV EXPORT] Wrote: {full_path}")
+
+        # Add observed/expected legend
+        obs, ex = obs_ex[n - 1]
+        textstr = f'Observed: {int(obs)} \n Expected: {int(ex)}'
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-        # place a text box in upper left in axes coords
         ax.text(0.55, 0.9, textstr, transform=ax.transAxes, fontsize=14,
                 verticalalignment='top', bbox=props)
-        ##
+
         yerr = x.std(axis=0) / np.sqrt(x.shape[0])
-        #ax.errorbar(x=np.arange(df.shape[1]), y=x.mean(axis=0),yerr=yerr,ecolor='black') # mean with error bars
         for j in range(x.shape[0]):
-            ax.plot(np.arange(df.shape[1]), x[j], markerfacecolor='none', alpha=0.2, c='gray') 
-        ax.errorbar(x=np.arange(df.shape[1]), y=x.mean(axis=0),yerr=yerr,ecolor='gray', c='black',linewidth=3) # mean with error bars
-        n+=1
+            ax.plot(np.arange(df.shape[1]), x[j], markerfacecolor='none', alpha=0.2, c='gray')
+        ax.errorbar(x=np.arange(df.shape[1]), y=x.mean(axis=0), yerr=yerr,
+                    ecolor='gray', c='black', linewidth=3)
+        n += 1
+
     if savepath:
         fig.savefig(savepath)
+
     return ax
 
-#Run the function
-if full_data:
-    fig_size2 = (20,140) #(20,140)
-else:
-    fig_size2 = (20,10)
-gprcpplot = gen_per_cell_plot(df,cell_ids,motif_labels,dcounts,exp_counts,figsize=fig_size2, savepath = os.path.normpath(os.path.join(plot_dir, sample_name + "_per_cell_proj_strength.svg")))
-#
-#
+gprcpplot = gen_per_cell_plot(
+    df, cell_ids, motif_labels, dcounts, exp_counts,
+    figsize=(20, 5 * len([m for m in motif_labels if len(m) > 1])),
+    savepath=os.path.normpath(os.path.join(plot_dir, sample_name + "_per_cell_proj_strength.svg")),
+    sample_name=sample_name,
+    export_csvs=True,
+    csv_dir=csv_output_dir
+)
+
+
 
 
 from sklearn.preprocessing import StandardScaler
@@ -1625,67 +1659,8 @@ dfraw.iloc[40:70]
 dfdata = prepare_upset_data(dfraw)
 dfdata = dfdata.sort_values(by=['Group','Observed'], ascending=[True,False])
 
-###CHATGPT OPTIMIZED VERSION FOR ANY NUMBER OF GROUPS
-def kplot(df, size=(30,12)):
-    """
-    data : pd.DataFrame
-    data is a dataframe with columns "Motifs" and "Counts"
-    where "Motifs" is a list of lists e.g. [['PFC','LS'],['LS']]
-    and "Counts" is a simple array of integers
-    """
-    motiflabels = df['Motifs'].to_list()
-    data = up.from_memberships(motiflabels, data=df['Observed'].to_numpy())
-    xlen = df.shape[0]
-    xticks = np.arange(xlen)
-    uplot = up.UpSet(data, sort_by=None)  # sort_by='cardinality'
-    fig, ax = plt.subplots(2, 2, gridspec_kw={'width_ratios': [1, 3], 'height_ratios': [3, 1]})
-    fig.set_size_inches(size)
-    ax[1, 0].set_ylabel("Set Totals")
-    uplot.plot_matrix(ax[1, 1])
-    uplot.plot_totals(ax[1, 0])
-    ax[0, 0].axis('off')
-    ax[0, 1].spines['bottom'].set_visible(False)
-    ax[0, 1].spines['top'].set_visible(False)
-    ax[0, 1].spines['right'].set_visible(False)
-    
-    width = 0.35
-    dodge = width / 2
-    x = np.arange(8)
-    ax[1, 0].set_title("Totals")
-    ax[0, 1].set_ylabel("Counts")
-    ax[0, 1].set_xlim(ax[1, 1].get_xlim())
-    
-    # Get unique group labels and create color map for each group dynamically
-    unique_groups = df['Group'].unique()
-    colorlist = ['red', 'darkblue', 'black', 'green', 'purple']  # Extend as needed
-    color_map = {group: colorlist[i % len(colorlist)] for i, group in enumerate(unique_groups)}
-    
-    # Map the colors based on the group
-    cs = [color_map[group] for group in df['Group']]
-    
-    # Plot the bars with colors
-    ax[0, 1].bar(xticks - dodge, df['Observed'].to_numpy(), width=width, label="Observed", align="center", color=cs, edgecolor='lightgray')
-    ax[0, 1].bar(xticks + dodge, df['Expected'].to_numpy(), yerr=df['Expected SD'].to_numpy(), width=width / 2, label="Expected", align="center", color='gray', alpha=0.5, ecolor='lightgray')
-    
-    # Draw significance asterisks
-    for group in unique_groups:
-        group_ids = np.where(df['Group'].to_numpy() == group)[0]
-        for i in group_ids:
-            ax[0, 1].text(xticks[i] - 0.5 * dodge, df['Observed'].to_numpy()[i] + 1, "*", fontsize=12, color=color_map[group])
 
-    # Hide axis ticks and grids
-    ax[0, 1].xaxis.grid(False)
-    ax[0, 1].xaxis.set_visible(False)
-    ax[1, 1].xaxis.set_visible(False)
-    ax[1, 1].xaxis.grid(False)
-    
-    fig.tight_layout()
-    return fig, ax
-
-fig, _ = kplot(dfdata)
-for ext in ["pdf", "svg", "png"]:
-    fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_upsetplot_gpt.{ext}")))
-
+#upsetplot fxn
 def kplot(df, size=(30,12)):
     """
     data : pd.DataFrame

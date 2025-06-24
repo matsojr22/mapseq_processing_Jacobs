@@ -4,7 +4,11 @@ import glob
 import pandas as pd
 import numpy as np
 import matplotlib
+
 matplotlib.use('Agg')  # Use non-GUI backend for headless environments
+matplotlib.rcParams['svg.fonttype'] = 'none'  # Keep text editable in SVGs
+matplotlib.rcParams['font.family'] = ['Arial'] #list of fonts to try
+
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -45,11 +49,11 @@ def main(data_dir, output_dir='plots'):
             normalized_data = []
             for _, row in df.iterrows():
                 values = row[1:].values.astype(float)
-                norm = (values - np.min(values)) / (np.max(values) - np.min(values) + 1e-8)
-                normalized_data.append(norm)
+                #norm = (values - np.min(values)) / (np.max(values) - np.min(values) + 1e-8)
+                normalized_data.append(values)
                 color = color_lookup[sample_id]
                 label = sample_id if sample_id not in plotted_samples else None
-                plt.plot(regions, norm, color=color, alpha=0.4, label=label)
+                plt.plot(regions, values, color=color, alpha=0.7, label=label)
 
             plotted_samples.add(sample_id)
             norm_array = np.array(normalized_data)
@@ -58,14 +62,15 @@ def main(data_dir, output_dir='plots'):
         combined_data = np.vstack(all_data)
         mean_vals = combined_data.mean(axis=0)
         sem_vals = combined_data.std(axis=0) / np.sqrt(combined_data.shape[0])
+        std_vals = combined_data.std(axis=0)
 
-        plt.errorbar(regions, mean_vals, yerr=sem_vals, fmt='-o', color='black',
-                     linewidth=2, capsize=5, label='Mean ± SEM')
+        plt.errorbar(regions, mean_vals, fmt='-o', color='black', # yerr=sem_vals,
+                     linewidth=2, capsize=5, label='Mean')
 
         plt.title(f"Normalized Regional Data: {title}")
         plt.xlabel("Region")
         plt.ylabel("Normalized Value (0-1)")
-        plt.grid(True)
+        plt.grid(False)
 
         # Deduplicate legend entries
         handles, labels = plt.gca().get_legend_handles_labels()

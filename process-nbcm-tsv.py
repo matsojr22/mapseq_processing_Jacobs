@@ -1746,14 +1746,14 @@ for col in ['Observed', 'Expected', 'P-value']:
     df_2region[col] = pd.to_numeric(df_2region[col], errors='coerce')
 
 # Classify significance label
-def get_sig_label(row, alpha=0.05):
-    if row['P-value'] < alpha:
-        if row['Observed'] > row['Expected']:
-            return 'over'
-        elif row['Observed'] < row['Expected']:
-            return 'under'
-    return 'ns'
-df_2region['sig_label'] = df_2region.apply(get_sig_label, axis=1)
+def get_sig_label_from_group(row):
+    if row['Group'] == 1:
+        return 'over'
+    elif row['Group'] == 2:
+        return 'under'
+    else:
+        return 'ns'
+df_2region['sig_label'] = df_2region.apply(get_sig_label_from_group, axis=1)
 
 # === Build networkx graph ===
 G = nx.Graph()

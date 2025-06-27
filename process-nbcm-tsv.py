@@ -102,25 +102,58 @@ os.makedirs(out_dir, exist_ok=True)
 full_data = True
 motif_join = '+'
 
-### Helper Functions
-
-def calculate_projections_from_matrix(matrix, sample_labels):
-    """Calculate TOTAL projections per region (including multiple per neuron).
-
-    1. column_counts: Iterates through each column (indexed by idx). Counts the number of nonzero values in that column using np.count_nonzero(). This counts how many neurons project to each brain region. Stores results in a dictionary.
-    2. **commented out*** total_projections: 'matrix > 0' creates a Boolean mask where True (1) means a projection exists. False (0) means no projection. 'np.sum(matrix > 0)' counts all nonzero elements across the entire matrix.Counts how many cells (neurons) project to any region (ignoring magnitude). Does not account for projection strength—it treats all values > 0 the same.
-This gives an idea of how many neurons are connected, but not their relative strengths.
-    3. total_projections: Sums column-wise counts instead. Uses actual projection strength values instead of just binary presence. This is the approach used by Kheirbeck Lab's codebook.
-    
+def compute_umi_total_counts(matrix: np.ndarray, region_labels: list, out_path: str = None):
     """
+    Computes the total summed UMI counts for each brain region (column-wise sum).
+
+    Args:
+        matrix (np.ndarray): Filtered matrix (cells × regions).
+        region_labels (list): List of region names corresponding to matrix columns.
+        out_path (str): Optional path to write CSV of total counts.
+
+    Returns:
+        dict: Mapping of region name to summed UMI counts.
+    """
+    umi_total_counts = {region: float(np.sum(matrix[:, idx])) for idx, region in enumerate(region_labels)}
+
+    print(f"🔍 UMI total counts (summed per region): {umi_total_counts}")
+
+    if out_path:
+        df = pd.DataFrame({
+            'Region': region_labels,
+            'UMI_Sum': [umi_total_counts[r] for r in region_labels]
+        })
+        df.to_csv(out_path, index=False)
+        print(f"💾 UMI total counts saved to: {out_path}")
+
+    return umi_total_counts
+
+def calculate_projections_from_matrix(matrix, sample_labels, out_path=None):
+    """
+    Calculate projection metrics per region:
+    - column_counts: Number of cells projecting to each region (binary presence).
+    - total_projections: Sum of column_counts, i.e., total number of projection events.
     
+    If out_path is provided, saves both dictionaries as a CSV.
+    """
+    # Binary projection presence count (how many cells project to each region)
     column_counts = {region: np.count_nonzero(matrix[:, idx]) for idx, region in enumerate(sample_labels)}
-    #total_projections = int(np.sum(matrix > 0)) #counts all projections as a 1 regardless of strength.
-    total_projections = sum(column_counts.values())  # sums all the column counts like Kheirbeck lab does
-    
+
+    # Total projection events (presence-based)
+    total_projections = sum(column_counts.values())
+
     print(f"🔍 Column counts (neurons per region): {column_counts}")
     print(f"🔍 Total projections (Sums column-wise counts): {total_projections}")
-    
+
+    # Optional CSV output
+    if out_path:
+        df = pd.DataFrame({
+            'Region': sample_labels,
+            'Cell_Counts': [column_counts[r] for r in sample_labels],            
+        })
+        df.to_csv(out_path, index=False)
+        print(f"💾 Projection summary saved to: {out_path}")
+
     return column_counts, total_projections
 
 def calculate_total_projections(projections):
@@ -409,6 +442,15 @@ assert normalized_matrix.shape[1] == len(columns), (
     f"Mismatch: Normalized matrix columns {normalized_matrix.shape[1]}, headers {len(columns)}"
 )
 
+# Save the filtered matrix to CSV for future analysis in the script
+filtered_matrix_file = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Filtered_Matrix.csv"))
+pd.DataFrame(filtered_matrix, columns=columns).to_csv(filtered_matrix_file, index=False, float_format="%.8f")
+print(f"💾 Filtered matrix saved to: 📂 {filtered_matrix_file}")
+
+# Compute UMI total counts
+umi_counts_outfile = os.path.join(out_dir, f"{sample_name}_UMI_Total_Counts.csv")
+umi_total_counts = compute_umi_total_counts(filtered_matrix, columns, out_path=umi_counts_outfile)
+
 # Save the normalized matrix to CSV for future analysis in the script
 normalized_matrix_file = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Normalized_Matrix.csv"))
 pd.DataFrame(normalized_matrix, columns=columns).to_csv(normalized_matrix_file, index=False, float_format="%.8f")
@@ -419,6 +461,7 @@ print(f"💾 Normalized matrix saved to: 📂 {normalized_matrix_file}")
     See the associated function
 """
 projections, total_projections = calculate_projections_from_matrix(normalized_matrix, columns)
+
 
 # Solve for N0
 roots, pi = solve_for_roots(projections, observed_cells)
@@ -531,10 +574,13 @@ calculated_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Calcula
 std_dev_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Standard_Deviation.csv"))
 motif_test_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Motif_Binomial_Results.csv"))
 
-log_scaled_value = sum(np.log(psdict[label]) for label in columns)
-scaled_value = np.exp(log_scaled_value)  # Convert back from log scale
-
-
+# Safe log-sum-exp calculation to avoid log(0)
+safe_psdict = {label: max(psdict.get(label, 0), 1e-10) for label in columns} # assign a very small floor value to avoid log(0)
+log_scaled_value = sum(np.log(safe_psdict[label]) for label in columns)
+scaled_value = np.exp(log_scaled_value) #convert back from log scaled
+zero_labels = [label for label in columns if psdict.get(label, 0) <= 0]
+if zero_labels:
+    print(f"⚠️ Warning: Zero or missing probabilities for labels: {zero_labels}")
 
 # Dynamic calculation using sample_labels and total_projections
 calculated_value = (1 - (1 - pe_num)**len(columns)) * observed_cells #total_projections
@@ -745,6 +791,7 @@ K = range(2, 15)  # skip k=1 for silhouette and BIC
 # 1. Elbow Method (Inertia)
 inertias = []
 for k in K:
+    k = min(k, X.shape[0])  # Prevents ValueError when too few samples
     km = KMeans(n_clusters=k, n_init="auto").fit(X)
     inertias.append(km.inertia_)
 
@@ -756,6 +803,7 @@ elbow_k = K[np.argmax(inertia_deltas2) + 2]  # +2 due to double diff
 # 2. Silhouette Score
 sil_scores = []
 for k in K:
+    k = min(k, X.shape[0])  # Prevents ValueError when too few samples
     km = KMeans(n_clusters=k, n_init="auto").fit(X)
     sil_scores.append(silhouette_score(X, km.labels_))
 silhouette_k = K[np.argmax(sil_scores)]
@@ -764,6 +812,7 @@ silhouette_k = K[np.argmax(sil_scores)]
 def compute_gap_statistic(X, refs=10):
     gaps = []
     for k in K:
+        k = min(k, X.shape[0])  # Prevents ValueError when too few samples
         km = KMeans(n_clusters=k, n_init="auto").fit(X)
         disp = np.mean(np.min(cdist(X, km.cluster_centers_, 'euclidean'), axis=1))
 
@@ -819,6 +868,7 @@ for ext in ["pdf", "svg", "png"]:
 
 
 # 🚀 Use consensus_k for final clustering
+k = min(k, X.shape[0])  # Prevents ValueError when too few samples
 km = KMeans(n_clusters=consensus_k, n_init="auto").fit(X)
 
 from sklearn.cluster import KMeans
@@ -829,6 +879,7 @@ import os
 
 # Clustering
 X = df.to_numpy()
+k = min(k, X.shape[0])  # Prevents ValueError when too few samples
 km = KMeans(n_clusters=consensus_k, n_init="auto").fit(X)
 clusters, regions = km.cluster_centers_.shape
 
@@ -1847,10 +1898,10 @@ plt.close()
 
 df.astype(bool).sum()
 
-## Build a summary data table for scripted runs or sequential runs in the same directory.
 def append_summary_wide_format_extended(
-    args, projections, total_projections, observed_cells, N0_value, pe_num, 
-    consensus_k, normalized_matrix, output_dir, motif_over, motif_under
+    args, projections, umi_total_counts, total_projections, observed_cells,
+    N0_value, pe_num, consensus_k, normalized_matrix, output_dir,
+    motif_over, motif_under
 ):
     import os
     import pandas as pd
@@ -1891,15 +1942,26 @@ def append_summary_wide_format_extended(
         "MotifUnderrepresented": " ".join(motif_under) if motif_under else "",
     }
 
+    # Reordered block: group by metric type (ProjCount, UMISum, MeanUMI)
     for region in columns:
         row[f"ProjCount_{region}"] = int(proj_counts.get(region, 0))
+
+    for region in columns:
+        val = umi_total_counts.get(region)
+        if val is None:
+            print(f"⚠️ Warning: Region '{region}' not in umi_total_counts. Defaulting to 0.")
+            val = 0.0
+        row[f"UMISum_{region}"] = float(val)
+
+    for region in columns:
         row[f"MeanUMI_{region}"] = float(mean_umis.get(region, 0.0))
 
     df_row = pd.DataFrame([row])
     df_row.to_csv(summary_path, mode='a', header=write_header, index=False, quoting=csv.QUOTE_ALL)
+    print(f"📈 Summary extended metrics appended to {summary_path}")
     print(f"🧪 MotifOver: {motif_over}")
     print(f"🧪 MotifUnder: {motif_under}")
-    print(f"📈 Summary extended metrics appended to {summary_path}")
+
 
 # ----------------------
 # SAFE motif extraction using the final upsetplot CSV (trusted final logic)
@@ -1975,6 +2037,7 @@ except Exception as e:
 append_summary_wide_format_extended(
     args,
     projections,
+    umi_total_counts,
     total_projections,
     observed_cells,
     N0_value,

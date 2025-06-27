@@ -16,9 +16,12 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import patches
 import seaborn as sn
 from scipy.spatial.distance import pdist
+from scipy.spatial.distance import cdist
 from sklearn.manifold import TSNE
 from scipy.stats import friedmanchisquare, kruskal, binomtest, binom
-from sklearn.cluster import k_means
+from sklearn.cluster import KMeans, k_means
+from sklearn.metrics import silhouette_score
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import normalize 
 import itertools
 from adjustText import adjust_text
@@ -26,6 +29,7 @@ import multiprocessing as mp
 import itertools
 import upsetplot as up
 from statsmodels.stats.multitest import fdrcorrection
+from collections import Counter
 
 # Argument parser setup
 parser = argparse.ArgumentParser(description="Process NBCM data")
@@ -447,9 +451,28 @@ filtered_matrix_file = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Fi
 pd.DataFrame(filtered_matrix, columns=columns).to_csv(filtered_matrix_file, index=False, float_format="%.8f")
 print(f"💾 Filtered matrix saved to: 📂 {filtered_matrix_file}")
 
-# Compute UMI total counts
+# Safely compute and save UMI total counts
 umi_counts_outfile = os.path.join(out_dir, f"{sample_name}_UMI_Total_Counts.csv")
-umi_total_counts = compute_umi_total_counts(filtered_matrix, columns, out_path=umi_counts_outfile)
+
+try:
+    umi_total_counts = compute_umi_total_counts(filtered_matrix, columns, out_path=umi_counts_outfile)
+
+    if not isinstance(umi_total_counts, dict):
+        raise TypeError("compute_umi_total_counts did not return a dictionary.")
+
+    missing_keys = [col for col in columns if col not in umi_total_counts]
+    if missing_keys:
+        print(f"⚠️ Warning: Missing UMI counts for regions: {missing_keys}")
+    else:
+        print(f"✅ All expected UMI counts present: {list(umi_total_counts.keys())}")
+
+    print(f"🔍 UMI total counts (summed per region): {umi_total_counts}")
+    print(f"💾 UMI total counts saved to: {umi_counts_outfile}")
+
+except Exception as e:
+    print(f"❌ Error during UMI total counts computation or saving: {e}")
+    umi_total_counts = {col: 0.0 for col in columns}  # fallback to avoid pipeline crash
+
 
 # Save the normalized matrix to CSV for future analysis in the script
 normalized_matrix_file = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Normalized_Matrix.csv"))
@@ -773,53 +796,47 @@ print("DF Head:")
 print(df.head())
 print("Number of NAs:")
 print(df.isnull().sum())
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sklearn.mixture import GaussianMixture
-from sklearn.utils import resample
-from scipy.spatial.distance import cdist
-import os
-from collections import Counter
-import warnings
-warnings.filterwarnings("ignore")
+
 
 X = df.to_numpy()
-K = range(2, 15)  # skip k=1 for silhouette and BIC
+K = list(range(2, 15))  # skip k=1 for silhouette and BIC
 
 # 1. Elbow Method (Inertia)
 inertias = []
-for k in K:
-    k = min(k, X.shape[0])  # Prevents ValueError when too few samples
+for k_val in K:
+    k = min(k_val, X.shape[0])  # Prevents ValueError when too few samples
     km = KMeans(n_clusters=k, n_init="auto").fit(X)
     inertias.append(km.inertia_)
 
 # Compute elbow using max second derivative
 inertia_deltas = np.diff(inertias)
 inertia_deltas2 = np.diff(inertia_deltas)
-elbow_k = K[np.argmax(inertia_deltas2) + 2]  # +2 due to double diff
+elbow_k = K[np.argmax(inertia_deltas2) + 2] if len(inertia_deltas2) > 0 else K[0]
 
 # 2. Silhouette Score
 sil_scores = []
-for k in K:
-    k = min(k, X.shape[0])  # Prevents ValueError when too few samples
-    km = KMeans(n_clusters=k, n_init="auto").fit(X)
+for k_val in K:
+    if k_val >= X.shape[0]:
+        sil_scores.append(-1)
+        continue
+    km = KMeans(n_clusters=k_val, n_init="auto").fit(X)
     sil_scores.append(silhouette_score(X, km.labels_))
 silhouette_k = K[np.argmax(sil_scores)]
 
 # 3. Gap Statistic
 def compute_gap_statistic(X, refs=10):
     gaps = []
-    for k in K:
-        k = min(k, X.shape[0])  # Prevents ValueError when too few samples
-        km = KMeans(n_clusters=k, n_init="auto").fit(X)
+    for k_val in K:
+        if k_val >= X.shape[0]:
+            gaps.append(-np.inf)
+            continue
+        km = KMeans(n_clusters=k_val, n_init="auto").fit(X)
         disp = np.mean(np.min(cdist(X, km.cluster_centers_, 'euclidean'), axis=1))
 
         ref_disps = []
         for _ in range(refs):
             X_ref = np.random.uniform(X.min(axis=0), X.max(axis=0), X.shape)
-            km_ref = KMeans(n_clusters=k, n_init="auto").fit(X_ref)
+            km_ref = KMeans(n_clusters=k_val, n_init="auto").fit(X_ref)
             ref_disp = np.mean(np.min(cdist(X_ref, km_ref.cluster_centers_, 'euclidean'), axis=1))
             ref_disps.append(ref_disp)
 
@@ -830,29 +847,38 @@ def compute_gap_statistic(X, refs=10):
 gaps = compute_gap_statistic(X)
 gap_k = K[np.argmax(gaps)]
 
-# 4. BIC using GMM
+# 4. BIC using GMM (guarded)
 bics = []
-for k in K:
-    gmm = GaussianMixture(n_components=k, n_init=1).fit(X)
-    bics.append(gmm.bic(X))
-bic_k = K[np.argmin(bics)]
+bic_valid_k = []
+for k_val in K:
+    if k_val >= X.shape[0]:
+        continue
+    try:
+        gmm = GaussianMixture(n_components=k_val, n_init=1).fit(X)
+        bics.append(gmm.bic(X))
+        bic_valid_k.append(k_val)
+    except:
+        continue
+
+bic_k = bic_valid_k[np.argmin(bics)] if bics else None
 
 # Consensus vote
-votes = [elbow_k, silhouette_k, gap_k, bic_k]
+votes = [v for v in [elbow_k, silhouette_k, gap_k, bic_k] if v is not None]
 vote_counts = Counter(votes)
 consensus_k = vote_counts.most_common(1)[0][0]
 
-# Optional: Print diagnostic info
+# Diagnostic info
 print(f"Elbow k = {elbow_k}, Silhouette k = {silhouette_k}, Gap k = {gap_k}, BIC k = {bic_k}")
 print(f"Consensus k = {consensus_k}")
 
-# Plot Inertia + Delta
+# Plot
 plt.figure(figsize=(10, 7))
-plt.plot(K, inertias, 'x-', color='blue', label='Inertia')
+plt.plot(K[:len(inertias)], inertias, 'x-', color='blue', label='Inertia')
 plt.axvline(x=elbow_k, color='gray', linestyle='--', label=f'Elbow: k={elbow_k}')
 plt.axvline(x=silhouette_k, color='green', linestyle='--', label=f'Silhouette: k={silhouette_k}')
 plt.axvline(x=gap_k, color='orange', linestyle='--', label=f'Gap: k={gap_k}')
-plt.axvline(x=bic_k, color='purple', linestyle='--', label=f'BIC: k={bic_k}')
+if bic_k is not None:
+    plt.axvline(x=bic_k, color='purple', linestyle='--', label=f'BIC: k={bic_k}')
 plt.axvline(x=consensus_k, color='red', linestyle=':', linewidth=2.0, label=f'Consensus: k={consensus_k}')
 plt.xlabel('k', fontsize=20)
 plt.ylabel('Inertia', fontsize=20)
@@ -860,16 +886,13 @@ plt.title('Cluster Evaluation Methods', fontsize=20)
 plt.legend()
 plt.tight_layout()
 
-# Save plots
-elbow_plt = plt.gcf()
-#elbow_plt.savefig(os.path.normpath(os.path.join(plot_dir, sample_name + "_cluster_diagnostics.pdf")))
 for ext in ["pdf", "svg", "png"]:
+    elbow_plt = plt.gcf()
     elbow_plt.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_cluster_diagnostics.{ext}")))
 
-
-# 🚀 Use consensus_k for final clustering
-k = min(k, X.shape[0])  # Prevents ValueError when too few samples
-km = KMeans(n_clusters=consensus_k, n_init="auto").fit(X)
+# 🚀 Final clustering
+safe_k = min(consensus_k, X.shape[0])
+km = KMeans(n_clusters=safe_k, n_init="auto").fit(X)
 
 from sklearn.cluster import KMeans
 from matplotlib.colors import LinearSegmentedColormap
@@ -1618,7 +1641,7 @@ for ext in ["pdf", "svg", "png"]:
 
 maxproj = TSNE(n_components=2,metric='cosine').fit_transform(df.to_numpy(copy=True))
 
-#maxprojclusters = k_means(X=maxproj,n_clusters=6)
+#maxprojclusters = kmeans(X=maxproj,n_clusters=6)
 
 tlabels = df.to_numpy(copy=True).argmax(axis=1)
 #tlabels = km[1]

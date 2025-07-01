@@ -1098,7 +1098,8 @@ def get_motif_sig_pts(dcounts,labels,\
     mlabels = [labels[h] for h in nonzid]
     return list(res), mlabels
 
-sigs, slabels = get_motif_sig_pts(dcounts,motif_labels,exclude_zeros=True)
+#SET TO TRUE IF YOU WANT TO EXCLUDE ZERO MOTIFS
+sigs, slabels = get_motif_sig_pts(dcounts,motif_labels,exclude_zeros=False)
 
 #Bonferroni correction: p-threshold / Num comparisons
 pcutoff = -1*np.log10(alpha / len(slabels)) #adjust alpha with argument
@@ -1146,6 +1147,21 @@ for n, (z, y) in enumerate(coordinates):
 y_vals = [y for _, y in subset_list(sigs, mask)]
 padding = 0.1 * (max(y_vals) - min(y_vals))  # Add 10% padding
 ax.set_ylim(min(y_vals) - padding, max(y_vals) + padding)
+
+# Adjust x-axis limits with padding
+x_vals = [x for x, _ in subset_list(sigs, mask)]
+x_padding = 0.1 * (max(x_vals) - min(x_vals))  # 10% padding
+
+x_min = min(x_vals) - x_padding
+x_max = max(x_vals) + x_padding
+
+# Ensure symmetric padding if range is around 0
+x_abs_max = max(abs(x_min), abs(x_max))
+ax.set_xlim(-x_abs_max, x_abs_max)
+
+#manual x-axis limits for figures
+#ax.set_xlim(-5, 5)
+
 
 # Adjust text positions to avoid overlap
 adjust_text(
@@ -1786,6 +1802,77 @@ fig,_ = kplot(dfdata)
 for ext in ["pdf", "svg", "png"]:
     fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_upsetplot.{ext}")))
 
+###CHATGPT OPTIMIZED VERSION DOESNT WORK
+def kplot(df, size=(30, 12)):
+    """
+    df : pd.DataFrame
+        DataFrame with columns: "Motifs", "Observed", "Expected", "Expected SD", "Group"
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import upsetplot as up
+
+    # Ensure zero-observed motifs are still included
+    motiflabels = df['Motifs'].to_list()
+    obs_counts = df['Observed'].fillna(0).astype(float).to_numpy()
+    data = up.from_memberships(motiflabels, data=obs_counts)
+
+    xlen = df.shape[0]
+    xticks = np.arange(xlen)
+
+    uplot = up.UpSet(data, sort_by=None)
+    fig, ax = plt.subplots(2, 2, gridspec_kw={'width_ratios': [1, 3], 'height_ratios': [3, 1]})
+    fig.set_size_inches(size)
+
+    ax[1, 0].set_ylabel("Set Totals")
+    uplot.plot_matrix(ax[1, 1])
+    uplot.plot_totals(ax[1, 0])
+    ax[0, 0].axis('off')
+
+    # Clean axis formatting
+    ax[0, 1].spines['bottom'].set_visible(False)
+    ax[0, 1].spines['top'].set_visible(False)
+    ax[0, 1].spines['right'].set_visible(False)
+
+    width = 0.35
+    dodge = width / 2
+    ox = xticks - dodge
+    ex = xticks + dodge
+
+    ax[1, 0].set_title("Totals")
+    ax[0, 1].set_ylabel("Counts")
+    ax[0, 1].set_xlim(ax[1, 1].get_xlim())
+
+    # Assign colors by group
+    colorlist = ['red', 'darkblue', 'black', 'black']
+    cs = [colorlist[i - 1] for i in df['Group']]
+    
+    # Bar plots
+    ax[0, 1].bar(ox, obs_counts, width=width, label="Observed", align="center",
+                 color=cs, edgecolor='lightgray')
+    ax[0, 1].bar(ex, df['Expected'].to_numpy(), yerr=df['Expected SD'].to_numpy(),
+                 width=width / 2, label="Expected", align="center",
+                 color='gray', alpha=0.5, ecolor='lightgray')
+
+    # Annotate Group 1 and Group 2 motifs even if Observed == 0
+    grp_ = df['Group'].to_numpy()
+    idsig = np.where((grp_ == 1) | (grp_ == 2))[0]
+    for i in idsig:
+        ax[0, 1].text(ox[i] - 0.5 * dodge, obs_counts[i] + 1, s="*")
+
+    # Final axis settings
+    ax[0, 1].xaxis.grid(False)
+    ax[0, 1].xaxis.set_visible(False)
+    ax[1, 1].xaxis.set_visible(False)
+    ax[1, 1].xaxis.grid(False)
+
+    fig.tight_layout()
+    return fig, ax
+
+fig,_ = kplot(dfdata)
+
+for ext in ["pdf", "svg", "png"]:
+    fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_upsetplot_gpt.{ext}")))
 
 import networkx as nx
 import numpy as np

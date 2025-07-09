@@ -1,4 +1,3 @@
-
 import os
 import glob
 import pandas as pd
@@ -7,7 +6,7 @@ import matplotlib
 
 matplotlib.use('Agg')  # Use non-GUI backend for headless environments
 matplotlib.rcParams['svg.fonttype'] = 'none'  # Keep text editable in SVGs
-matplotlib.rcParams['font.family'] = ['Arial'] #list of fonts to try
+matplotlib.rcParams['font.family'] = ['Arial']  # List of fonts to try
 
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -32,7 +31,7 @@ def main(data_dir, output_dir='plots'):
         # Determine unique sample IDs and assign colors
         sample_ids = [Path(f).stem.split('_')[0] for f in files]
         unique_samples = sorted(set(sample_ids))
-        color_map = plt.colormaps.get_cmap('Set1')
+        color_map = plt.colormaps.get_cmap('tab10')
         color_lookup = {
             sample: color_map(i / max(1, len(unique_samples) - 1))
             for i, sample in enumerate(unique_samples)
@@ -49,11 +48,10 @@ def main(data_dir, output_dir='plots'):
             normalized_data = []
             for _, row in df.iterrows():
                 values = row[1:].values.astype(float)
-                #norm = (values - np.min(values)) / (np.max(values) - np.min(values) + 1e-8)
                 normalized_data.append(values)
                 color = color_lookup[sample_id]
                 label = sample_id if sample_id not in plotted_samples else None
-                plt.plot(regions, values, color=color, alpha=0.7, label=label)
+                plt.plot(regions, values, color=color, alpha=0.9, label=label)
 
             plotted_samples.add(sample_id)
             norm_array = np.array(normalized_data)
@@ -64,7 +62,7 @@ def main(data_dir, output_dir='plots'):
         sem_vals = combined_data.std(axis=0) / np.sqrt(combined_data.shape[0])
         std_vals = combined_data.std(axis=0)
 
-        plt.errorbar(regions, mean_vals, fmt='-o', color='black', # yerr=sem_vals,
+        plt.errorbar(regions, mean_vals, fmt='-o', color='black',  # yerr=sem_vals,
                      linewidth=2, capsize=5, label='Mean')
 
         plt.title(f"Normalized Regional Data: {title}")
@@ -72,10 +70,17 @@ def main(data_dir, output_dir='plots'):
         plt.ylabel("Normalized Value (0-1)")
         plt.grid(False)
 
-        # Deduplicate legend entries
+        # Deduplicate and sort legend entries, with 'Mean' last
         handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        plt.legend(by_label.values(), by_label.keys(), title="Sample ID")
+        label_handle_pairs = dict(zip(labels, handles))
+
+        mean_handle = label_handle_pairs.pop('Mean', None)
+        sorted_pairs = sorted(label_handle_pairs.items(), key=lambda x: x[0])
+        if mean_handle:
+            sorted_pairs.append(('Mean', mean_handle))
+
+        sorted_labels, sorted_handles = zip(*sorted_pairs)
+        plt.legend(sorted_handles, sorted_labels, title="Sample ID")
 
         plt.tight_layout()
         output_path = os.path.join(output_dir, f"{title}_normalized_plot.svg")

@@ -1167,13 +1167,6 @@ ax.set_xlim(-x_abs_max, x_abs_max)
 adjust_text(
     texts,
     #only_move={'points': 'y', 'text': 'y'},  # Allow vertical movement
-    arrowprops=dict(
-        arrowstyle="->",
-        color='gray',
-        lw=1,
-        shrinkA=1,  # These values won't matter much for adjust_text
-        shrinkB=1
-    ),
     expand_points=(1.5, 2.5),  # Add padding around points
     force_text=1,  # Increase separation force for text
     force_points=1  # Increase separation force for points
@@ -1292,16 +1285,16 @@ import sys
 # Workaround for Windows recursion bug
 sys.setrecursionlimit(5000)
 
-### === Red-White Cluster Heatmap === ###
-print("🔍 Generating Red-White cluster heatmap...")
+### === Green-White Cluster Heatmap === ###
+print("🔍 Generating Green-White cluster heatmap...")
 
 # Dynamically build full order list
-order_full = [col for pattern in ['RSP', 'PM', 'AM', 'A', 'RL', 'AL', 'LM']
+order_full = [col for pattern in ['LM', 'AL', 'RL', 'A', 'AM', 'PM', 'RSP']
               for col in df.columns if re.match(f"{pattern}\\d*", col)]
 order_full = list(dict.fromkeys(order_full))
 
 if not order_full:
-    raise ValueError("❌ No matching columns found for red-white cluster heatmap.")
+    raise ValueError("❌ No matching columns found for green-white cluster heatmap.")
 
 order_partial = ['LM', 'AL', 'RL', 'AM', 'PM']
 order_partial = [col for col in order_partial if col in df.columns]
@@ -1323,7 +1316,7 @@ df_scaled = pd.DataFrame(
 df_scaled_np = df_scaled.to_numpy(copy=True).astype(float)
 
 # Colormap
-red_white_cm = LinearSegmentedColormap.from_list('white_to_red', ['white', 'red'], N=100)
+grn_white_cm = LinearSegmentedColormap.from_list('white_to_green', ['white', 'green'], N=100)
 
 # Drop constant or all-zero rows
 df_scaled = df_scaled.loc[df_scaled.var(axis=1) > 0]
@@ -1339,7 +1332,7 @@ clusterfig = sns.clustermap(
     metric='cosine',
     method='average',
     cbar_kws=dict(label='Projection Strength'),
-    cmap=red_white_cm,
+    cmap=grn_white_cm,
     vmin=0.0,
     vmax=1.0
 )
@@ -1348,15 +1341,15 @@ clusterfig.ax_heatmap.set_title(sample_name.replace('_', ' '))
 clusterfig.ax_heatmap.axes.get_yaxis().set_visible(False)
 
 for ext in ['pdf', 'svg', 'png']:
-    clusterfig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_red_white_cluster_heatmap.{ext}")))
+    clusterfig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_green_white_cluster_heatmap.{ext}")))
 
-print("✅ Red-White cluster heatmap saved.")
+print("✅ Green-White cluster heatmap saved.")
 
 ### === Han-Style Heatmap === ###
 print("🔍 Generating Han-style heatmap...")
 
 # Han colormap
-han_cm = LinearSegmentedColormap.from_list('white_to_orange', ['white', 'orange'], N=100)
+han_cm = LinearSegmentedColormap.from_list('white_to_green', ['white', 'green'], N=100)
 
 # Define Han-style targets
 han_targets = ['LM', 'AL', 'PM', 'AM', 'RL']
@@ -1382,22 +1375,27 @@ df_han = df_han.loc[df_han.var(axis=1) > 0].reset_index(drop=True)
 if df_han.shape[0] < 2:
     raise ValueError("❌ Not enough valid rows in df_han after filtering.")
 
-# Linkage
-row_linkage = linkage(pdist(df_han, metric='euclidean'), method='ward')
+# Sort rows by max projection column index
+df_han['max_proj_col'] = df_han.values.argmax(axis=1)
+df_han = df_han.sort_values('max_proj_col').drop(columns='max_proj_col').reset_index(drop=True)
 
-# Ensure clean native float matrix
-df_han_np = df_han.to_numpy(copy=True).astype(float)
+# Linkage use if you want dendrogram sorting
+#row_linkage = linkage(pdist(df_han, metric='euclidean'), method='ward')
+
+# Ensure clean float type in DataFrame
+df_han = df_han.astype(float)
 
 # Draw Han-style heatmap
 clusterfig_han = sns.clustermap(
     df_han,
-    row_linkage=row_linkage,
+    row_cluster=False,
     col_cluster=False,
     cmap=han_cm,
     vmin=0.0,
     vmax=1.0,
     cbar_kws=dict(label='Projection Strength')
 )
+
 
 clusterfig_han.ax_heatmap.set_title(sample_name.replace('_', ' ') + ' (Han-style)')
 clusterfig_han.ax_heatmap.axes.get_yaxis().set_visible(False)

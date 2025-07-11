@@ -6,7 +6,7 @@ import matplotlib
 
 matplotlib.use('Agg')  # Use non-GUI backend for headless environments
 matplotlib.rcParams['svg.fonttype'] = 'none'  # Keep text editable in SVGs
-matplotlib.rcParams['font.family'] = ['Arial']  # List of fonts to try
+matplotlib.rcParams['font.family'] = ['Helvetica', 'Arial']  # List of fonts to try
 
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -24,6 +24,8 @@ def main(data_dir, output_dir='plots'):
         grouped_files[title].append(file)
 
     os.makedirs(output_dir, exist_ok=True)
+
+    region_order = ['LM', 'AL', 'AM', 'PM', 'RSP']  # Desired x-axis order
 
     for title, files in grouped_files.items():
         plt.figure(figsize=(12, 6))
@@ -43,15 +45,18 @@ def main(data_dir, output_dir='plots'):
         for file in files:
             df = pd.read_csv(file)
             sample_id = Path(file).stem.split('_')[0]
-            regions = df.columns[1:]
+
+            # Always skip the first column, and reorder based on region_order
+            region_cols = [col for col in region_order if col in df.columns[1:]]
+            df = df.iloc[:, [0] + [df.columns.get_loc(col) for col in region_cols]]
 
             normalized_data = []
             for _, row in df.iterrows():
-                values = row[1:].values.astype(float)
+                values = row.values[1:].astype(float)  # Skip row label column
                 normalized_data.append(values)
                 color = color_lookup[sample_id]
                 label = sample_id if sample_id not in plotted_samples else None
-                plt.plot(regions, values, color=color, alpha=0.9, label=label)
+                plt.plot(region_cols, values, color=color, alpha=0.9, label=label)
 
             plotted_samples.add(sample_id)
             norm_array = np.array(normalized_data)
@@ -62,7 +67,7 @@ def main(data_dir, output_dir='plots'):
         sem_vals = combined_data.std(axis=0) / np.sqrt(combined_data.shape[0])
         std_vals = combined_data.std(axis=0)
 
-        plt.errorbar(regions, mean_vals, fmt='-o', color='black',  # yerr=sem_vals,
+        plt.errorbar(region_cols, mean_vals, fmt='-o', color='black',
                      linewidth=2, capsize=5, label='Mean')
 
         plt.title(f"Normalized Regional Data: {title}")

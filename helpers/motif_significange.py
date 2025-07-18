@@ -1,3 +1,5 @@
+#Takes the upsetplot.csv files from the process-nbcm.tsv pipeline output and produces an effect size trajectory for each motif.
+
 import os
 import pandas as pd
 import matplotlib.pyplot as plt

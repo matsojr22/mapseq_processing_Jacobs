@@ -1,3 +1,5 @@
+#Takes the motif_raw_data directory as input to create projection strength plots. This will work with individual animal data, or with the aggregates, but not both. Check for hardcoding if you get samples missing from the outputs, dont run m### with ALL type samples, this will break the labeling.
+
 import os
 import glob
 import pandas as pd

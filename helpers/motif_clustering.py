@@ -1,3 +1,5 @@
+#written by Adam to do clustering analysis on the upsetplot.csv data that we used in the trajectories.
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt

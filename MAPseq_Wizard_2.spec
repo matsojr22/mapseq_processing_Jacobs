@@ -12,7 +12,11 @@ a = Analysis(
         ('README.md', '.'),
     ],
     hiddenimports=[
-        'PySimpleGUI',
+        'tkinter',
+        'tkinter.ttk',
+        'tkinter.filedialog',
+        'tkinter.messagebox',
+        'tkinter.scrolledtext',
         'numpy',
         'pandas',
         'matplotlib',

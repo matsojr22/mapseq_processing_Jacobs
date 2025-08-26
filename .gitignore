@@ -1,0 +1,9 @@
+venv
+comparison_test
+df_normalized_data
+test_output
+__pycache__
+*.log
+.DS_Store
+compare_original_vs_refactor.py
+src/presentation/visualization/plot_generator_backup.py

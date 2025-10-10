@@ -1,3 +1,7 @@
+# Forked version for experimentation and development
+
+Please note that this is a fork of my offical work on the KimLab codebase. If you are testing this code please use the offical stable branch at the [Kim Neuroscience Lab](https://github.com/Kim-Neuroscience-Lab)
+
 # MAPseq Analysis Script
 
 MAPseq processing code based on previous works and designed to be used with the CSHL python pipeline.

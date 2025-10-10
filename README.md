@@ -8,7 +8,7 @@ MAPseq processing code based on previous works and designed to be used with the 
 
 Code found here is generally a work in progress until publication.
 
-[![Lines of Code](https://tokei.rs/b1/github/Kim-Neuroscience-Lab/KimLabISI?category=code)](https://github.com/Kim-Neuroscience-Lab/KimLabISI)
+[![Lines of Code](https://tokei.rs/b1/github/matsojr22/mapseq_processing_Jacobs?category=code)](https://github.com/matsojr22/mapseq_processing_Jacobs)
 
 ## **Before you run:**
 

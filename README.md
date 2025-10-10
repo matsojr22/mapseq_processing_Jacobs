@@ -1,14 +1,13 @@
 # Forked version for experimentation and development
 
 Please note that this is a fork of my offical work on the KimLab codebase. If you are testing this code please use the offical stable branch at the [Kim Neuroscience Lab](https://github.com/Kim-Neuroscience-Lab)
+[![Lines of Code](https://tokei.rs/b1/github/matsojr22/mapseq_processing_Jacobs?category=code)](https://github.com/matsojr22/mapseq_processing_Jacobs)
 
 # MAPseq Analysis Script
 
 MAPseq processing code based on previous works and designed to be used with the CSHL python pipeline.
 
 Code found here is generally a work in progress until publication.
-
-[![Lines of Code](https://tokei.rs/b1/github/matsojr22/mapseq_processing_Jacobs?category=code)](https://github.com/matsojr22/mapseq_processing_Jacobs)
 
 ## **Before you run:**
 

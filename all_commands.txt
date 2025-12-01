@@ -1,0 +1,76 @@
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s P12_ALL_HAN_filters -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/aggregated_cleaned_matrix.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s m777 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/m777.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0686 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0686.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0671 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0671.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0670 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0670.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0422 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0422.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0420 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0420.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0685 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0685.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0689 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0689.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0690 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p12/jr0690.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s p20_ALL_HAN_filters -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/aggregated_cleaned_matrix.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0678 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/jr0678.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0674 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/jr0674.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0672 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/jr0672.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0883 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/jr0883.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0884 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/jr0884.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0887 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p20/jr0887.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s p60_ALL_HAN_filters -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/aggregated_cleaned_matrix.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0695 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0695.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0694 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0694.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0692 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0692.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0552 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0552.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0548 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0548.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0547 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0547.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0448 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0448.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0446 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0446.nbcm.all_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,pm,am,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0546 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0546.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+python process-nbcm-tsv.py -o /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/ -s jr0693 -d /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/01_aggregate_data/p60/jr0693.nbcm_cleaned.tsv -i 300 -r 10 -t 10 -u 5 -l "rsp,am,pm,al,lm,neg,inj" --force_user_threshold
+
+# ============================================================================
+# Helper Scripts - Run after main processing pipeline completes
+# ============================================================================
+
+# Motif and projection analysis scripts (run automatically, no arguments needed)
+# Note: 01_motif_analysis_per_animal.py supports --output_mode (cross_age, per_age, or both; default: cross_age)
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/01_motif_analysis_per_animal.py --output_mode both
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/02_projection_analysis.py
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/03_composition.py
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/04_proportions_over_time_stats.py
+
+# Motif proportion analysis (05 must run before 06)
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/05_motif_analysis.py
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/06_all_motif_divergence.py
+
+# Motif trajectory analysis (requires input directory with upsetplot.csv files)
+# First, create a temporary directory and collect aggregate upsetplot files from all ages
+mkdir -p /tmp/motif_trajectories_input
+cp /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/P12_ALL_HAN_filters_upsetplot.csv /tmp/motif_trajectories_input/
+cp /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/p20_ALL_HAN_filters_upsetplot.csv /tmp/motif_trajectories_input/
+cp /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/p60_ALL_HAN_filters_upsetplot.csv /tmp/motif_trajectories_input/
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/07_motif_significange_trajectories.py --input_dir /tmp/motif_trajectories_input
+
+# Motif clustering analysis (uses combined effect sizes from motif trajectory analysis)
+# The script will automatically use combined_effect_sizes.csv from 07_motif_significange_trajectories output
+# Or specify --input_file if using a different file
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/08_motif_clustering.py
+
+# Plot normalized projection strength data (requires data directory with *_raw_data.csv files)
+# Process individual animal files for each age group (saves to p12/, p20/, p60/ subdirectories)
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/09_plot_normalized_projection_strength_data.py /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/motif_raw_data --file_type individual
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/09_plot_normalized_projection_strength_data.py /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/motif_raw_data --file_type individual
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/09_plot_normalized_projection_strength_data.py /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/motif_raw_data --file_type individual
+
+# Plot aggregate comparison across all ages (saves to ALL_ages/ subdirectory)
+python /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/helpers/scripts/09_plot_normalized_projection_strength_data.py /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output --file_type aggregate --all_ages_base_dir /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826/02_output
+
+# Dataset comparison scripts (require input CSV files - update paths as needed)
+# python scripts/10_compare_datasets_pipeline.py dataset1.csv dataset2.csv --output comparison_name
+# python scripts/11_compare_vsv_mapseq_two_way.py --vsv vsv_data.csv --mapseq mapseq_data.csv --output vsv_mapseq_comparison
+# python scripts/12_compare_datasets_pipeline_mapseq.py --allen allen_data.csv --vsv vsv_data.csv --mapseq mapseq_data.csv --output three_way_comparison
+
+# ============================================================================
+# Quality Control Check - Run after all processing completes
+# ============================================================================
+cd /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826
+python postprocessing_checks.py

@@ -1,0 +1,128 @@
+================================================================================
+POST-PROCESSING QUALITY CONTROL REPORT
+================================================================================
+Generated: 2025-12-01 15:50:06
+Repository: /Users/matt/git/mapseq_processing_kimlab-archive-main_20250826
+
+EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+Animals Processed: 28
+Animals Succeeded: 20
+Animals Failed: 8
+  - Expected Failures (low data quality): 8
+  - Unexpected Failures: 0
+Helper Scripts Run: 9
+Helper Scripts Succeeded: 9
+Total Output Files: 270
+
+Success Rate: 71.4%
+
+FINDINGS SUMMARY
+--------------------------------------------------------------------------------
+✓ Successes: 22
+⚠ Warnings: 3
+✗ Errors: 0
+ℹ Info: 35
+
+ERRORS
+--------------------------------------------------------------------------------
+  ✓ No unexpected errors found
+
+  Error breakdown (all errors in log):
+    - ValueError: 8x
+
+WARNINGS
+--------------------------------------------------------------------------------
+  ⚠ FutureWarning: 292 occurrence(s) - LOW severity: Library deprecation warnings (mostly from pandas/upsetplot, non-critical)
+    - Chained assignment deprecation: 160x
+    - Pandas fillna/ffill/bfill deprecation: 112x
+    - DataFrame concatenation deprecation: 20x
+  ⚠ UserWarning: 3 occurrence(s) - MEDIUM severity: User-facing warnings that may indicate issues
+    - Other UserWarnings: 3x
+  ⚠ Processing Warning: 76 occurrence(s) - MEDIUM severity: Processing warnings from the pipeline
+    - User-forced threshold: 56x
+    - Normalized matrix is empty: 4x
+    - No nonzero target values: 4x
+    - 'neg' column contains only NaN: 4x
+    - Complex number errors: 3x
+    - Insufficient data points for KDE: 2x
+    - Zero or missing probabilities: 2x
+    - 'neg' column not found: 1x
+
+SUCCESSES
+--------------------------------------------------------------------------------
+  ✓ No SyntaxWarnings found (fixes applied successfully)
+  ✓ p12: Found 30 main output files (10 unique animals)
+  ✓ p12: Found 18 analysis files
+  ✓ p12: Aggregate upsetplot file found: P12_ALL_HAN_filters_upsetplot.csv
+  ✓ p20: Found 21 main output files (7 unique animals)
+  ✓ p20: Found 15 analysis files
+  ✓ p20: Aggregate upsetplot file found: P20_ALL_HAN_filters_upsetplot.csv
+  ✓ p60: Found 33 main output files (11 unique animals)
+  ✓ p60: Found 27 analysis files
+  ✓ p60: Aggregate upsetplot file found: P60_ALL_HAN_filters_upsetplot.csv
+  ✓ 01_motif_analysis_per_animal: 17 files found (expected ≥3)
+  ✓ 02_projection_analysis: 12 files found (expected ≥9)
+  ✓ 03_composition: 2 files found (expected ≥2)
+  ✓ 04_proportions_over_time_stats: 6 files found (expected ≥4)
+  ✓ 05_motif_analysis: 10 files found (expected ≥5)
+  ✓ 06_all_motif_divergence: 3 files found (expected ≥3)
+  ✓ 07_motif_significange_trajectories: 36 files found (expected ≥3)
+  ✓ 08_motif_clustering: 4 files found (expected ≥4)
+  ✓ 09_plot_normalized_projection_strength_data: 96 files found (expected ≥20)
+  ✓ projection_summary.csv found with 5 animals
+  ✓ projection_summary.csv found with 9 animals
+  ✓ projection_summary.csv found with 6 animals
+
+DETAILED INFORMATION
+--------------------------------------------------------------------------------
+  ℹ Analyzing log file: processing_20251201_154658.log (494,162 bytes)
+  ℹ Helper script 01_motif_analysis_per_animal.py: Output directory exists with files
+  ℹ Helper script 02_projection_analysis.py: Output directory exists with files
+  ℹ Helper script 03_composition.py: Output directory exists with files
+  ℹ Helper script 04_proportions_over_time_stats.py: Output directory exists with files
+  ℹ Helper script 05_motif_analysis.py: Output directory exists with files
+  ℹ Helper script 06_all_motif_divergence.py: Output directory exists with files
+  ℹ Helper script 07_motif_significange_trajectories.py: Output directory exists with files
+  ℹ Helper script 08_motif_clustering.py: Output directory exists with files
+  ℹ Helper script 09_plot_normalized_projection_strength_data.py: Output directory exists with files
+  ℹ 
+=== Main Processing Outputs ===
+  ℹ   p12: Animals with outputs: P12_ALL_HAN_filters, jr0420, jr0422, jr0670, jr0671, jr0685, jr0686, jr0689, jr0690, m777
+  ℹ   p12: Found 71 motif raw data files
+  ℹ   p20: Animals with outputs: jr0672, jr0674, jr0678, jr0883, jr0884, jr0887, p20_ALL_HAN_filters
+  ℹ   p20: Found 65 motif raw data files
+  ℹ   p60: Animals with outputs: jr0446, jr0448, jr0546, jr0547, jr0548, jr0552, jr0692, jr0693, jr0694, jr0695 (+1 more)
+  ℹ   p60: Found 134 motif raw data files
+  ℹ 
+=== Helper Script Outputs ===
+  ℹ   01_motif_analysis_per_animal: Found 8 files matching *.svg
+  ℹ   01_motif_analysis_per_animal: Found 9 files matching *.csv
+  ℹ   02_projection_analysis: Found 12 files matching *_vs_*.svg
+  ℹ   03_composition: Found 2 files matching *.svg
+  ℹ   04_proportions_over_time_stats: Found 3 files matching *.png
+  ℹ   04_proportions_over_time_stats: Found 3 files matching *.csv
+  ℹ   05_motif_analysis: Found 3 files matching *.png
+  ℹ   05_motif_analysis: Found 3 files matching *.csv
+  ℹ   05_motif_analysis: Found 2 files matching *.txt
+  ℹ   06_all_motif_divergence: Found 3 files matching divergence_*.svg
+  ℹ   07_motif_significange_trajectories: Found 2 files matching *.csv
+  ℹ   07_motif_significange_trajectories: Found 32 files matching *.svg
+  ℹ   07_motif_significange_trajectories: Found 2 files matching *.pdf
+  ℹ   08_motif_clustering: Found 4 files matching *.png
+  ℹ   09_plot_normalized_projection_strength_data: Found 96 files matching *.svg
+  ℹ 
+=== Data Quality Checks ===
+  ℹ   ✓ All data quality checks passed (see SUCCESSES section for details)
+
+RECOMMENDATIONS
+--------------------------------------------------------------------------------
+  ℹ 8 animal(s) failed due to low data quality (expected behavior)
+     These samples had 0-2 cells after filtering and cannot be processed
+     No action needed - these are documented as expected failures
+  ⚠ Pipeline completed with 3 warning(s)
+     Most warnings are LOW severity (FutureWarnings from libraries)
+     Review WARNINGS section for any HIGH or MEDIUM severity items
+  ⚠ Moderate success rate (71.4%) - some data quality issues expected
+
+================================================================================

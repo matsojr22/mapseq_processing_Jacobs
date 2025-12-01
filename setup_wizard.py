@@ -4,10 +4,48 @@ import platform
 import shutil
 import sys
 import requests
+import re
 
-GIT_URL = "https://github.com/Kim-Neuroscience-Lab/mapseq_processing_kimlab.git"
 ENV_NAME = "mapseq_processing"
-GUI_EXE_URL = "https://github.com/Kim-Neuroscience-Lab/mapseq_processing_kimlab/releases/download/v0.2.0-beta/MAPseq_Wizard.exe"
+
+def get_git_remote_url(repo_path=None):
+    """Get the git remote URL from the current repository"""
+    if repo_path is None:
+        repo_path = os.path.dirname(os.path.abspath(__file__))
+    
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback to default if git not available or not a git repo
+        return "https://github.com/Kim-Neuroscience-Lab/mapseq_processing_kimlab.git"
+
+def get_gui_exe_url(git_url=None, version="v0.2.0-beta"):
+    """Construct GUI exe download URL from git remote URL"""
+    if git_url is None:
+        git_url = get_git_remote_url()
+    
+    # Convert git URL to GitHub releases URL format
+    # Handle both https://github.com/user/repo.git and git@github.com:user/repo.git
+    if "github.com" in git_url:
+        # Extract user/repo from URL
+        match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', git_url)
+        if match:
+            user, repo = match.groups()
+            return f"https://github.com/{user}/{repo}/releases/download/{version}/MAPseq_Wizard.exe"
+    
+    # Return None if we can't construct the URL (e.g., not GitHub or private repo)
+    return None
+
+# Get dynamic URLs based on current repository
+GIT_URL = get_git_remote_url()
+GUI_EXE_URL = get_gui_exe_url(GIT_URL)
 
 def prompt_install_path(default_path):
     print(f"\n📁 Default Miniconda install location: {default_path}")
@@ -59,10 +97,18 @@ def create_env_and_setup(conda_exe, install_dir):
     else:
         print("📂 Repo already cloned.")
 
-    # Download the GUI exe into the cloned repo directory
+    # Download the GUI exe into the cloned repo directory (if available)
     gui_exe_path = os.path.join(git_dir, "MAPseq_Wizard.exe")
     if not os.path.exists(gui_exe_path):
-        download_gui_exe(GUI_EXE_URL, gui_exe_path)
+        if GUI_EXE_URL:
+            try:
+                download_gui_exe(GUI_EXE_URL, gui_exe_path)
+            except Exception as e:
+                print(f"⚠️ Could not download GUI exe from {GUI_EXE_URL}: {e}")
+                print("   You can build it manually using PyInstaller if needed.")
+        else:
+            print("⚠️ GUI exe URL not available (may not be a GitHub repo or no releases available)")
+            print("   You can build it manually using PyInstaller if needed.")
     else:
         print(f"✅ GUI exe already exists at: {gui_exe_path}")
 

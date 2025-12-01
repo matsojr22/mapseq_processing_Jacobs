@@ -1,0 +1,100 @@
+Per-Motif Transition Comparison
+
+P12 vs P20
+['al', 'am', 'lm', 'pm', 'rsp']: P12 = 0.10%, P20 = 0.00% -> JS Divergence = 0.0004, Significant = False
+['al', 'am', 'lm', 'pm']: P12 = 0.10%, P20 = 0.35% -> JS Divergence = 0.0004, Significant = False
+['al', 'am', 'lm', 'rsp']: P12 = 0.10%, P20 = 0.23% -> JS Divergence = 0.0001, Significant = False
+['al', 'am', 'lm']: P12 = 0.91%, P20 = 1.51% -> JS Divergence = 0.0004, Significant = False
+['al', 'am', 'pm', 'rsp']: P12 = 0.00%, P20 = 0.12% -> JS Divergence = 0.0004, Significant = False
+['al', 'am', 'pm']: P12 = 0.10%, P20 = 0.12% -> JS Divergence = 0.0000, Significant = False
+['al', 'am', 'rsp']: P12 = 0.10%, P20 = 0.00% -> JS Divergence = 0.0004, Significant = False
+['al', 'am']: P12 = 1.41%, P20 = 2.56% -> JS Divergence = 0.0009, Significant = False
+['al', 'lm', 'pm', 'rsp']: P12 = 0.00%, P20 = 0.00% -> JS Divergence = nan, Significant = False
+['al', 'lm', 'pm']: P12 = 0.20%, P20 = 0.23% -> JS Divergence = 0.0000, Significant = False
+['al', 'lm', 'rsp']: P12 = 0.20%, P20 = 0.23% -> JS Divergence = 0.0000, Significant = False
+['al', 'lm']: P12 = 3.94%, P20 = 10.70% -> JS Divergence = 0.0087, Significant = False
+['al', 'pm', 'rsp']: P12 = 0.00%, P20 = 0.12% -> JS Divergence = 0.0004, Significant = False
+['al', 'pm']: P12 = 0.20%, P20 = 0.00% -> JS Divergence = 0.0007, Significant = False
+['al', 'rsp']: P12 = 0.30%, P20 = 0.12% -> JS Divergence = 0.0002, Significant = False
+['al']: P12 = 20.91%, P20 = 21.28% -> JS Divergence = 0.0000, Significant = False
+['am', 'lm', 'pm', 'rsp']: P12 = 0.51%, P20 = 0.23% -> JS Divergence = 0.0003, Significant = False
+['am', 'lm', 'pm']: P12 = 1.41%, P20 = 0.58% -> JS Divergence = 0.0009, Significant = False
+['am', 'lm', 'rsp']: P12 = 0.20%, P20 = 0.00% -> JS Divergence = 0.0007, Significant = False
+['am', 'lm']: P12 = 4.44%, P20 = 2.44% -> JS Divergence = 0.0015, Significant = False
+['am', 'pm', 'rsp']: P12 = 0.40%, P20 = 0.58% -> JS Divergence = 0.0001, Significant = False
+['am', 'pm']: P12 = 4.55%, P20 = 3.02% -> JS Divergence = 0.0008, Significant = False
+['am', 'rsp']: P12 = 1.21%, P20 = 1.40% -> JS Divergence = 0.0000, Significant = False
+['am']: P12 = 14.55%, P20 = 24.77% -> JS Divergence = 0.0083, Significant = False
+['lm', 'pm', 'rsp']: P12 = 0.40%, P20 = 0.00% -> JS Divergence = 0.0014, Significant = False
+['lm', 'pm']: P12 = 2.42%, P20 = 0.70% -> JS Divergence = 0.0026, Significant = False
+['lm', 'rsp']: P12 = 0.81%, P20 = 0.70% -> JS Divergence = 0.0000, Significant = False
+['lm']: P12 = 30.30%, P20 = 20.35% -> JS Divergence = 0.0066, Significant = False
+['pm', 'rsp']: P12 = 0.61%, P20 = 0.00% -> JS Divergence = 0.0021, Significant = False
+['pm']: P12 = 6.77%, P20 = 6.16% -> JS Divergence = 0.0001, Significant = False
+['rsp']: P12 = 2.83%, P20 = 1.51% -> JS Divergence = 0.0010, Significant = False
+
+P20 vs P60
+['al', 'am', 'lm', 'pm', 'rsp']: P20 = 0.00%, P60 = 0.23% -> JS Divergence = 0.0008, Significant = False
+['al', 'am', 'lm', 'pm']: P20 = 0.35%, P60 = 0.55% -> JS Divergence = 0.0001, Significant = False
+['al', 'am', 'lm', 'rsp']: P20 = 0.23%, P60 = 0.03% -> JS Divergence = 0.0005, Significant = False
+['al', 'am', 'lm']: P20 = 1.51%, P60 = 0.26% -> JS Divergence = 0.0025, Significant = False
+['al', 'am', 'pm', 'rsp']: P20 = 0.12%, P60 = 0.10% -> JS Divergence = 0.0000, Significant = False
+['al', 'am', 'pm']: P20 = 0.12%, P60 = 0.36% -> JS Divergence = 0.0003, Significant = False
+['al', 'am', 'rsp']: P20 = 0.00%, P60 = 0.05% -> JS Divergence = 0.0002, Significant = False
+['al', 'am']: P20 = 2.56%, P60 = 0.42% -> JS Divergence = 0.0043, Significant = False
+['al', 'lm', 'pm', 'rsp']: P20 = 0.00%, P60 = 0.21% -> JS Divergence = 0.0007, Significant = False
+['al', 'lm', 'pm']: P20 = 0.23%, P60 = 0.91% -> JS Divergence = 0.0011, Significant = False
+['al', 'lm', 'rsp']: P20 = 0.23%, P60 = 0.16% -> JS Divergence = 0.0000, Significant = False
+['al', 'lm']: P20 = 10.70%, P60 = 8.05% -> JS Divergence = 0.0010, Significant = False
+['al', 'pm', 'rsp']: P20 = 0.12%, P60 = 0.16% -> JS Divergence = 0.0000, Significant = False
+['al', 'pm']: P20 = 0.00%, P60 = 1.09% -> JS Divergence = 0.0038, Significant = False
+['al', 'rsp']: P20 = 0.12%, P60 = 0.16% -> JS Divergence = 0.0000, Significant = False
+['al']: P20 = 21.28%, P60 = 31.77% -> JS Divergence = 0.0071, Significant = False
+['am', 'lm', 'pm', 'rsp']: P20 = 0.23%, P60 = 0.60% -> JS Divergence = 0.0004, Significant = False
+['am', 'lm', 'pm']: P20 = 0.58%, P60 = 1.41% -> JS Divergence = 0.0009, Significant = False
+['am', 'lm', 'rsp']: P20 = 0.00%, P60 = 0.08% -> JS Divergence = 0.0003, Significant = False
+['am', 'lm']: P20 = 2.44%, P60 = 1.09% -> JS Divergence = 0.0013, Significant = False
+['am', 'pm', 'rsp']: P20 = 0.58%, P60 = 0.47% -> JS Divergence = 0.0000, Significant = False
+['am', 'pm']: P20 = 3.02%, P60 = 2.32% -> JS Divergence = 0.0002, Significant = False
+['am', 'rsp']: P20 = 1.40%, P60 = 0.39% -> JS Divergence = 0.0015, Significant = False
+['am']: P20 = 24.77%, P60 = 2.53% -> JS Divergence = 0.0597, Significant = True
+['lm', 'pm', 'rsp']: P20 = 0.00%, P60 = 0.70% -> JS Divergence = 0.0024, Significant = False
+['lm', 'pm']: P20 = 0.70%, P60 = 3.75% -> JS Divergence = 0.0059, Significant = False
+['lm', 'rsp']: P20 = 0.70%, P60 = 0.81% -> JS Divergence = 0.0000, Significant = False
+['lm']: P20 = 20.35%, P60 = 31.64% -> JS Divergence = 0.0083, Significant = False
+['pm', 'rsp']: P20 = 0.00%, P60 = 0.99% -> JS Divergence = 0.0034, Significant = False
+['pm']: P20 = 6.16%, P60 = 7.97% -> JS Divergence = 0.0006, Significant = False
+['rsp']: P20 = 1.51%, P60 = 0.76% -> JS Divergence = 0.0007, Significant = False
+
+P12 vs P60
+['al', 'am', 'lm', 'pm', 'rsp']: P12 = 0.10%, P60 = 0.23% -> JS Divergence = 0.0001, Significant = False
+['al', 'am', 'lm', 'pm']: P12 = 0.10%, P60 = 0.55% -> JS Divergence = 0.0008, Significant = False
+['al', 'am', 'lm', 'rsp']: P12 = 0.10%, P60 = 0.03% -> JS Divergence = 0.0001, Significant = False
+['al', 'am', 'lm']: P12 = 0.91%, P60 = 0.26% -> JS Divergence = 0.0010, Significant = False
+['al', 'am', 'pm', 'rsp']: P12 = 0.00%, P60 = 0.10% -> JS Divergence = 0.0004, Significant = False
+['al', 'am', 'pm']: P12 = 0.10%, P60 = 0.36% -> JS Divergence = 0.0004, Significant = False
+['al', 'am', 'rsp']: P12 = 0.10%, P60 = 0.05% -> JS Divergence = 0.0000, Significant = False
+['al', 'am']: P12 = 1.41%, P60 = 0.42% -> JS Divergence = 0.0014, Significant = False
+['al', 'lm', 'pm', 'rsp']: P12 = 0.00%, P60 = 0.21% -> JS Divergence = 0.0007, Significant = False
+['al', 'lm', 'pm']: P12 = 0.20%, P60 = 0.91% -> JS Divergence = 0.0012, Significant = False
+['al', 'lm', 'rsp']: P12 = 0.20%, P60 = 0.16% -> JS Divergence = 0.0000, Significant = False
+['al', 'lm']: P12 = 3.94%, P60 = 8.05% -> JS Divergence = 0.0038, Significant = False
+['al', 'pm', 'rsp']: P12 = 0.00%, P60 = 0.16% -> JS Divergence = 0.0005, Significant = False
+['al', 'pm']: P12 = 0.20%, P60 = 1.09% -> JS Divergence = 0.0017, Significant = False
+['al', 'rsp']: P12 = 0.30%, P60 = 0.16% -> JS Divergence = 0.0001, Significant = False
+['al']: P12 = 20.91%, P60 = 31.77% -> JS Divergence = 0.0076, Significant = False
+['am', 'lm', 'pm', 'rsp']: P12 = 0.51%, P60 = 0.60% -> JS Divergence = 0.0000, Significant = False
+['am', 'lm', 'pm']: P12 = 1.41%, P60 = 1.41% -> JS Divergence = 0.0000, Significant = False
+['am', 'lm', 'rsp']: P12 = 0.20%, P60 = 0.08% -> JS Divergence = 0.0001, Significant = False
+['am', 'lm']: P12 = 4.44%, P60 = 1.09% -> JS Divergence = 0.0056, Significant = False
+['am', 'pm', 'rsp']: P12 = 0.40%, P60 = 0.47% -> JS Divergence = 0.0000, Significant = False
+['am', 'pm']: P12 = 4.55%, P60 = 2.32% -> JS Divergence = 0.0019, Significant = False
+['am', 'rsp']: P12 = 1.21%, P60 = 0.39% -> JS Divergence = 0.0011, Significant = False
+['am']: P12 = 14.55%, P60 = 2.53% -> JS Divergence = 0.0254, Significant = False
+['lm', 'pm', 'rsp']: P12 = 0.40%, P60 = 0.70% -> JS Divergence = 0.0002, Significant = False
+['lm', 'pm']: P12 = 2.42%, P60 = 3.75% -> JS Divergence = 0.0007, Significant = False
+['lm', 'rsp']: P12 = 0.81%, P60 = 0.81% -> JS Divergence = 0.0000, Significant = False
+['lm']: P12 = 30.30%, P60 = 31.64% -> JS Divergence = 0.0001, Significant = False
+['pm', 'rsp']: P12 = 0.61%, P60 = 0.99% -> JS Divergence = 0.0002, Significant = False
+['pm']: P12 = 6.77%, P60 = 7.97% -> JS Divergence = 0.0003, Significant = False
+['rsp']: P12 = 2.83%, P60 = 0.76% -> JS Divergence = 0.0032, Significant = False

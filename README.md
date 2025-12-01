@@ -1,30 +1,22 @@
-# Forked version for experimentation and development
-
-Please note that this is a fork of my offical work on the KimLab codebase. If you are testing this code please use the offical stable branch at the [Kim Neuroscience Lab](https://github.com/Kim-Neuroscience-Lab)
-
-[![Lines of Code](https://tokei.rs/b1/github/matsojr22/mapseq_processing_Jacobs?category=code)](https://github.com/matsojr22/mapseq_processing_Jacobs)
-
 # MAPseq Analysis Script
-
 MAPseq processing code based on previous works and designed to be used with the CSHL python pipeline.
 
 Code found here is generally a work in progress until publication.
 
 ## **Before you run:**
-
 - Be sure that you have processed your fastq files using the [CSHL mapseq-processing Python Pipeline](https://github.com/ZadorLaboratory/mapseq-processing).
 - A preprocessing and data aggregation script is provided to prepare a individaul and combined cohort level dataframe for analysis using the per-animal sample.nbcm.tsv files produced by the CSHL pipeline. This script requires the user to match the nbcm header labels to their own sample labels to ensure all the data is correctly aligned when concatenated.
-- This script **scripts/process_nbcm_tsv.py** uses the aggregated_cleaned_matrix.tsv produced by the preprocessing and aggregation script (or individual sample.nbcm.tsv files from the CSHL pipeline if you do not have replicates). If you want to run a full analysis, you will need to ensure that the fastq processing parameters in the CSHL script have included: your samples, your negative control, and your injection columns in the output. Partial analysis is also possible at your discretion; there is a provided truncated "sample dataset" and associated "labels" which you can check out for guidance. You will need to check the arguments for each script if these requirements are unclear.
-- If you are on Windows and want to **try the GUI Wizard**, then please download the most recent **setup_wizard.exe** from the releases page. Running this will automatically install the software necessary to run all the scripts, and will create a MAPseq_Wizard.exe in the installation directory that will provide a GUI for the main **scripts/process_nbcm_tsv.py** script. You will still need to preprocess in the terminal at the moment.
+- This script **process-nbcm-tsv.py** uses the aggregated_cleaned_matrix.tsv produced by the preprocessing and aggregation script (or individual sample.nbcm.tsv files from the CSHL pipeline if you do not have replicates). If you want to run a full analysis, you will need to ensure that the fastq processing parameters in the CSHL script have included: your samples, your negative control, and your injection columns in the output. Partial analysis is also possible at your discretion; there is a provided truncated "sample dataset" and associated "labels" which you can check out for guidance. You will need to check the arguments for each script if these requirements are unclear.
+- If you are on Windows and want to **try the GUI Wizard**, then please download the most recent **setup_wizard.exe** from the releases page. Running this will automatically install the software necessary to run all the scripts, and will create a MAPseq_Wizard.exe in the installation directory that will provide a GUI for the main **process-nbcm-tsv.py** script. You will still need to preprocess in the terminal at the moment.
 - Else, from the terminal you need to setup a new conda environment, repos, and dependencies as shown below.
 - Run preprocessing then main analysis scripts.
-  <br/>
+<br/>
 
 ## EXE Installation (Windows Only)
 
-1. Download and [install Git](https://gitforwindows.org/) if not already installed.
-
-2. Download the most recent Setup_Wizard.exe from the [releases page](https://github.com/matsojr22/mapseq_processing_Jacobs/releases).
+1. Download and [install Git](https://gitforwindows.org/) if not already installed. 
+  
+2. Download the most recent Setup_Wizard.exe from the [releases page](https://github.com/Kim-Neuroscience-Lab/mapseq_processing_kimlab/releases).
 
 3. Run the file and wait for it to complete the installation (Default location is the user directory).
 
@@ -32,7 +24,7 @@ Code found here is generally a work in progress until publication.
 
 1. Install mini-conda for your operating system. [mini-conda quick command line install](https://docs.anaconda.com/miniconda/install/#quick-command-line-install)
 
-2. With conda installed create a new environment preloaded with pip
+2.  With conda installed create a new environment preloaded with pip
 
 ```
 conda create -n mapseq_processing python==3.9 pip
@@ -74,7 +66,7 @@ python preprocess_and_aggregate.py -i /home/mwjacobs/git/mapseq_processing_jacob
 8. Run the main analysis script on your sample.nbcm.tsv (command below shown using included sample dataset, but typically you would run using your aggregated data from the prior step)
 
 ```
-python scripts/process_nbcm_tsv.py -o /home/mwjacobs/git/mapseq_processing_jacobs/jr0375_out/ -s JR0375 -d /home/mwjacobs/git/mapseq_processing_jacobs/sample_data/JR0375.nbcm.tsv -u 2 -l "RSP,PM,AM,A,RL,AL,LM,neg,inj"
+python process-nbcm-tsv.py -o /home/mwjacobs/git/mapseq_processing_jacobs/jr0375_out/ -s JR0375 -d /home/mwjacobs/git/mapseq_processing_jacobs/sample_data/JR0375.nbcm.tsv -u 2 -l "RSP,PM,AM,A,RL,AL,LM,neg,inj"
 ```
 
 <br/>
@@ -87,8 +79,7 @@ python scripts/process_nbcm_tsv.py -o /home/mwjacobs/git/mapseq_processing_jacob
 
 **-s** = prefix for your saved files
 
-**-l** = A list of your human readable column names in the tsv (Example:"area,area,area,neg,area,inj")
-
+**-l** = A list of your human readable column names in the tsv (Example:"area,area,area,neg,area,inj") 
 - Your list must use 'neg' for any columns containing negative controls and 'inj' for any injection site column.
 - Your list can use whatever names you want for the target areas but avoid spaces and characters.
 - The code will try to sort target areas if you have repeat values (visp1,visp2,visp3,audp1,audp2...).
@@ -129,8 +120,7 @@ Used for potential noise reduction of single UMI values in targets, but you can 
 <br/>
 
 ## **BUGS**
-
-There are a few bugs presently.
+There are a few bugs presently. 
 
 1. The plots may experience formatting issues
 
@@ -143,3 +133,94 @@ There are a few bugs presently.
 **-A** = Label from your labels to match for the first "important area" (e.g., 'AL') Must match something in your labels! (updated to dynamically calculate using all labeled areas)
 
 **-B** = Label from your labels to match for the second "important area" (e.g., 'PM') Must match something in your labels! (updated to dynamically calculate using all labeled areas)
+
+<br/>
+
+---
+
+## Helper Scripts
+
+After running the main processing pipeline (`process-nbcm-tsv.py`), you can run helper scripts for additional analysis. These scripts are organized in the `helpers/` directory and are numbered by their execution order in the pipeline.
+
+### Directory Structure
+
+```
+helpers/
+├── scripts/              # All Python helper scripts (numbered by execution order)
+├── logs/                # Processing log files
+├── outputs/             # All script outputs (numbered to match scripts)
+├── composition by age/  # Legacy directory (contains data files)
+└── motif_proportion_analysis/  # Legacy directory (now empty, scripts moved to scripts/)
+```
+
+### Script Execution Order
+
+Helper scripts are numbered by their execution order in the pipeline:
+
+1. **01_motif_analysis_per_animal.py** - Per-animal motif analysis
+2. **02_projection_analysis.py** - Projection analysis
+3. **03_composition.py** - Composition by age analysis
+4. **04_proportions_over_time_stats.py** - Proportions over time statistics
+5. **05_motif_analysis.py** - Motif proportion analysis (step 1)
+6. **06_all_motif_divergence.py** - Motif divergence analysis (step 2, requires step 5)
+7. **07_motif_significange_trajectories.py** - Motif trajectory analysis
+8. **08_motif_clustering.py** - Motif clustering (uses output from step 7)
+9. **09_plot_normalized_projection_strength_data.py** - Normalized projection strength plots
+
+#### Optional/Comparison Scripts
+
+These scripts are typically commented out in `all_commands.txt` and require external datasets:
+
+- **10_compare_datasets_pipeline.py** - Two-way dataset comparison
+- **11_compare_vsv_mapseq_two_way.py** - VSV vs MapSeq comparison
+- **12_compare_datasets_pipeline_mapseq.py** - Three-way comparison (Allen, VSV, MapSeq)
+
+### Output Directories
+
+All script outputs are organized in `helpers/outputs/` with numbered subdirectories matching script numbers:
+
+- `helpers/outputs/01_motif_analysis_per_animal/`
+- `helpers/outputs/02_projection_analysis/`
+- `helpers/outputs/03_composition/`
+- `helpers/outputs/04_proportions_over_time_stats/`
+- `helpers/outputs/05_motif_analysis/`
+- `helpers/outputs/06_all_motif_divergence/`
+- `helpers/outputs/07_motif_significange_trajectories/`
+- `helpers/outputs/08_motif_clustering/`
+- `helpers/outputs/09_plot_normalized_projection_strength_data/`
+- `helpers/outputs/10_compare_datasets_pipeline/`
+- `helpers/outputs/11_compare_vsv_mapseq_two_way/`
+- `helpers/outputs/12_compare_datasets_pipeline_mapseq/`
+
+### Running Helper Scripts
+
+All scripts should be run from the repository root or from the `helpers/` directory:
+
+```bash
+# From repository root
+python helpers/scripts/01_motif_analysis_per_animal.py
+python helpers/scripts/02_projection_analysis.py
+# ... etc
+
+# Or from helpers directory
+cd helpers
+python scripts/01_motif_analysis_per_animal.py
+python scripts/02_projection_analysis.py
+# ... etc
+```
+
+For convenience, you can use the `all_commands.txt` file which contains all commands in the correct order. You can run it using:
+
+```bash
+bash run_commands.sh
+```
+
+Or manually execute commands from `all_commands.txt`.
+
+### Notes
+
+- Scripts use `Path(__file__).parent` to determine their location, so they work regardless of where they're called from
+- Output directories are automatically created by each script
+- Log files from processing are stored in `helpers/logs/`
+- All dependencies are listed in the main `requirements.txt` file
+- Script and output directory numbers correspond to execution order in the pipeline

@@ -7,3 +7,9 @@ __pycache__
 .DS_Store
 compare_original_vs_refactor.py
 src/presentation/visualization/plot_generator_backup.py
+
+# Data and output directories
+00_cleaned_data/
+01_aggregate_data/
+02_output/
+helpers/outputs/

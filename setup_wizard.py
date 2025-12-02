@@ -24,7 +24,7 @@ def get_git_remote_url(repo_path=None):
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         # Fallback to default if git not available or not a git repo
-        return "https://github.com/Kim-Neuroscience-Lab/mapseq_processing_kimlab.git"
+        return "https://github.com/matsojr22/mapseq_processing_Jacobs.git"
 
 def get_gui_exe_url(git_url=None, version="v0.2.0-beta"):
     """Construct GUI exe download URL from git remote URL"""
@@ -91,7 +91,9 @@ def create_env_and_setup(conda_exe, install_dir):
     conda(["config", "--add", "channels", "bioconda"], conda_exe)
 
     print("🐙 Cloning project repository...")
-    git_dir = os.path.join(install_dir, "mapseq_processing_kimlab")
+    # Extract repo name from git URL
+    repo_name = os.path.basename(GIT_URL.rstrip('.git')) if GIT_URL.endswith('.git') else os.path.basename(GIT_URL)
+    git_dir = os.path.join(install_dir, repo_name)
     if not os.path.exists(git_dir):
         subprocess.run(["git", "clone", GIT_URL], cwd=install_dir, check=True)
     else:

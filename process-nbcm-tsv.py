@@ -423,6 +423,15 @@ else:
 
 print("🔍 Filtered Matrix Shape:", filtered_matrix.shape)
 
+# Calculate mean injection value after all filtering is complete
+if "inj" in sample_labels:
+    inj_col_idx = sample_labels.index("inj")
+    mean_inj_value_filtered_cells_only = np.mean(filtered_matrix[:, inj_col_idx])
+    print(f"🔍 Mean injection value (filtered cells only): {mean_inj_value_filtered_cells_only:.4f}")
+else:
+    mean_inj_value_filtered_cells_only = np.nan
+    print("⚠️ WARNING: 'inj' column not found. Cannot calculate mean injection value.")
+
 # Drop "neg" and "inj" columns from the filtered matrix
 neg_inj_columns = [i for i, label in enumerate(sample_labels) if "neg" in label.lower() or label == "inj"]
 if neg_inj_columns:
@@ -2025,7 +2034,7 @@ df.astype(bool).sum()
 def append_summary_wide_format_extended(
     args, projections, umi_total_counts, total_projections, observed_cells,
     N0_value, pe_num, consensus_k, normalized_matrix, output_dir,
-    motif_over, motif_under
+    motif_over, motif_under, mean_inj_value_filtered_cells_only
 ):
     import os
     import pandas as pd
@@ -2055,6 +2064,7 @@ def append_summary_wide_format_extended(
         "user umi min": args.target_umi_min,
         "force_user_threshold": args.force_user_threshold,
         "threshold used": final_umi_threshold,
+        "mean_inj_value_filtered_cells_only": float(mean_inj_value_filtered_cells_only) if not np.isnan(mean_inj_value_filtered_cells_only) else np.nan,
         "Labels": ",".join(columns),
         "TotalProjections": total_projections,
         "ObservedCells": observed_cells,
@@ -2170,5 +2180,6 @@ append_summary_wide_format_extended(
     normalized_matrix,
     out_dir,
     motif_over,
-    motif_under
+    motif_under,
+    mean_inj_value_filtered_cells_only
 )

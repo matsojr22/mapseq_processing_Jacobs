@@ -15,11 +15,46 @@ mpl.rcParams['svg.fonttype'] = 'none'
 mpl.rcParams['font.family'] = ['Helvetica', 'Arial', 'sans-serif']
 
 # Try to find projection_summary.csv files in 02_output subdirectories
+import argparse
+parser = argparse.ArgumentParser(description="Generate composition plots")
+parser.add_argument('--base_output_dir', type=str, default=None,
+                   help='Base output directory for processing results (default: REPO_ROOT/02_output)')
+parser.add_argument('--helper_output_dir', type=str, default=None,
+                   help='Directory for helper script outputs (default: helpers/outputs/03_composition)')
+args = parser.parse_args()
+
 REPO_ROOT = Path(__file__).parent.parent.parent
-OUTPUT_DIR = REPO_ROOT / "02_output"
+if args.base_output_dir:
+    OUTPUT_DIR = Path(args.base_output_dir)
+else:
+    OUTPUT_DIR = REPO_ROOT / "02_output"
+
+# Extract parameterization name from helper_output_dir if provided
+parameterization_filter = None
+if args.helper_output_dir:
+    helper_path = Path(args.helper_output_dir)
+    # Look for parameterization name in path (e.g., .../01.minimal_filter_parameters_..._helpers/...)
+    for part in helper_path.parts:
+        if part.startswith(('01.', '02.', '03.', '04.', '05.')) and '_helpers' in part:
+            # Extract just the parameterization name (before _helpers)
+            parameterization_filter = part.split('_helpers')[0]
+            print(f"Filtering by parameterization: {parameterization_filter}")
+            break
+        elif part.startswith(('01.', '02.', '03.', '04.', '05.')):
+            parameterization_filter = part
+            print(f"Filtering by parameterization: {parameterization_filter}")
+            break
 
 # Look for projection_summary.csv files in subdirectories
-summary_files = glob.glob(str(OUTPUT_DIR / "**" / "projection_summary.csv"), recursive=True)
+# Filter by parameterization if specified
+if parameterization_filter:
+    summary_files = []
+    for age_dir in ['p3', 'p12', 'p20', 'p60']:
+        param_path = OUTPUT_DIR / age_dir / parameterization_filter
+        if param_path.exists():
+            summary_files.extend(glob.glob(str(param_path / "**" / "projection_summary.csv"), recursive=True))
+else:
+    summary_files = glob.glob(str(OUTPUT_DIR / "**" / "projection_summary.csv"), recursive=True)
 
 if summary_files:
     # Combine all projection_summary.csv files
@@ -190,10 +225,15 @@ legend_elements = [Patch(facecolor=colors[i], label=area_labels[i]) for i in ran
 ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5), frameon=False)
 
 plt.tight_layout()
-OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "03_composition"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-output_file = OUTPUT_DIR / "UMI_composition_by_age.svg"
-plt.savefig(output_file, format='svg')
+if args.helper_output_dir:
+    HELPER_OUTPUT_DIR = Path(args.helper_output_dir)
+else:
+    HELPER_OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "03_composition"
+HELPER_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Save in multiple formats for compatibility
+for ext in ['png', 'pdf', 'svg']:
+    output_file = HELPER_OUTPUT_DIR / f"UMI_composition_by_age.{ext}"
+    plt.savefig(output_file, format=ext, dpi=300)
 plt.close()
 
 # Extract and sort ProjCount data
@@ -291,6 +331,8 @@ legend_elements = [Patch(facecolor=colors_proj[i], label=proj_area_labels[i]) fo
 ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5), frameon=False)
 
 plt.tight_layout()
-output_file = OUTPUT_DIR / "ProjCount_composition_by_age.svg"
-plt.savefig(output_file, format='svg')
+# Save in multiple formats for compatibility
+for ext in ['png', 'pdf', 'svg']:
+    output_file = HELPER_OUTPUT_DIR / f"ProjCount_composition_by_age.{ext}"
+    plt.savefig(output_file, format=ext, dpi=300)
 plt.close()

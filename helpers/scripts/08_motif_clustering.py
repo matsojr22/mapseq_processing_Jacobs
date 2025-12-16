@@ -779,92 +779,138 @@ def main():
         default=None,
         help="Number of clusters for analysis (if not specified, optimal number will be determined automatically)",
     )
+    parser.add_argument(
+        "--input_dir",
+        type=str,
+        default=None,
+        help="Directory containing output from 07_motif_significange_trajectories.py (default: helpers/outputs/07_motif_significange_trajectories)",
+    )
+    parser.add_argument(
+        "--helper_output_dir",
+        type=str,
+        default=None,
+        help="Directory for helper script outputs (default: helpers/outputs/08_motif_clustering)",
+    )
 
     args = parser.parse_args()
     
     # Set output directory
     script_dir = Path(__file__).parent
-    output_dir = script_dir.parent / "outputs" / "08_motif_clustering"
+    if args.helper_output_dir:
+        output_dir = Path(args.helper_output_dir)
+    else:
+        output_dir = script_dir.parent / "outputs" / "08_motif_clustering"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Determine input file path
-    if args.input_file is None:
-        # Default to combined_effect_sizes.csv from motif_significange_trajectories output
-        input_file = script_dir.parent / "outputs" / "07_motif_significange_trajectories" / "combined_effect_sizes.csv"
-        if not input_file.exists():
-            raise FileNotFoundError(
-                f"Input file not found: {input_file}. "
-                f"Please run motif_significange_trajectories.py first or specify --input_file"
-            )
-    else:
-        input_file = Path(args.input_file)
-        if not input_file.exists():
-            raise FileNotFoundError(f"Input file not found: {input_file}")
+    # Process both models separately
+    models_to_process = ['uniform', 'region_specific']
+    
+    # Check if input_dir contains model subdirectories
+    input_base_dir = Path(args.input_dir) if args.input_dir else script_dir.parent / "outputs" / "07_motif_significange_trajectories"
+    
+    for model_type in models_to_process:
+        print("\n" + "="*80)
+        print(f"Processing {model_type.upper()} MODEL")
+        print("="*80)
+        
+        # Determine input file path for this model
+        if args.input_file is None:
+            # Check for model-specific file first, then fall back to main directory
+            model_input_file = input_base_dir / model_type / f"combined_effect_sizes_{model_type}.csv"
+            if not model_input_file.exists():
+                # Fall back to main directory (backward compatibility)
+                model_input_file = input_base_dir / "combined_effect_sizes.csv"
+        else:
+            # If input_file is specified, use it for first model only, then skip others
+            if model_type == 'uniform':
+                model_input_file = Path(args.input_file)
+            else:
+                # For region_specific, try to find corresponding file
+                input_file_path = Path(args.input_file)
+                model_input_file = input_file_path.parent / model_type / f"combined_effect_sizes_{model_type}.csv"
+                if not model_input_file.exists():
+                    print(f"Skipping {model_type} model - input file not found")
+                    continue
+        
+        if not model_input_file.exists():
+            print(f"Warning: Input file not found for {model_type} model: {model_input_file}")
+            print(f"  Please run motif_significange_trajectories.py first or specify --input_file")
+            continue
+        
+        # Create model-specific output directory
+        model_output_dir = output_dir / model_type
+        os.makedirs(model_output_dir, exist_ok=True)
+        
+        # Load and prepare data
+        print(f"Loading {model_type} model data from {model_input_file}...")
+        df = pd.read_csv(model_input_file)
 
-    # Load and prepare data
-    print(f"Loading data from {input_file}...")
-    df = pd.read_csv(input_file)
+        print(f"Preparing data for clustering ({model_type} model)...")
+        data_matrix = prepare_clustering_data(df)
 
-    print("Preparing data for clustering...")
-    data_matrix = prepare_clustering_data(df)
+        # Perform clustering
+        print(f"Performing hierarchical clustering ({model_type} model)...")
+        linkage_matrix, distance_matrix, method_name = perform_clustering(data_matrix)
 
-    # Perform clustering
-    print("Performing hierarchical clustering...")
-    linkage_matrix, distance_matrix, method_name = perform_clustering(data_matrix)
+        # Evaluate optimal number of clusters
+        print(f"Evaluating optimal number of clusters ({model_type} model)...")
+        optimal_clusters, metrics_data = evaluate_optimal_clusters(
+            data_matrix,
+            linkage_matrix,
+            max_clusters=15,
+            output_file=str(model_output_dir / "motif_clustering_evaluation.png"),
+        )
 
-    # Evaluate optimal number of clusters
-    print("Evaluating optimal number of clusters...")
-    optimal_clusters, metrics_data = evaluate_optimal_clusters(
-        data_matrix,
-        linkage_matrix,
-        max_clusters=15,
-        output_file=str(output_dir / "motif_clustering_evaluation.png"),
-    )
+        # Use the optimal number of clusters if not specified
+        if args.n_clusters is None:
+            final_n_clusters = optimal_clusters
+            print(f"Using optimal number of clusters: {final_n_clusters}")
+        else:
+            final_n_clusters = args.n_clusters
+            print(f"Using user-specified number of clusters: {final_n_clusters}")
 
-    # Use the optimal number of clusters if not specified
-    if args.n_clusters is None:
-        final_n_clusters = optimal_clusters
-        print(f"Using optimal number of clusters: {final_n_clusters}")
-    else:
-        final_n_clusters = args.n_clusters
-        print(f"Using user-specified number of clusters: {final_n_clusters}")
+        # Analyze clusters to get cluster assignments
+        print(f"Analyzing clusters ({model_type} model)...")
+        clustered_data = analyze_clusters(data_matrix, linkage_matrix, final_n_clusters)
 
-    # Analyze clusters to get cluster assignments
-    print("Analyzing clusters...")
-    clustered_data = analyze_clusters(data_matrix, linkage_matrix, final_n_clusters)
+        # Extract the dendrogram order for tree visualization
+        print(f"Extracting dendrogram order ({model_type} model)...")
+        dendrogram_order = extract_dendrogram_order(linkage_matrix, data_matrix)
 
-    # Extract the dendrogram order for tree visualization
-    print("Extracting dendrogram order...")
-    dendrogram_order = extract_dendrogram_order(linkage_matrix, data_matrix)
+        # Create distance-based linear ordering for heatmap
+        print(f"Creating distance-based ordering ({model_type} model)...")
+        from scipy.spatial.distance import pdist, squareform
 
-    # Create distance-based linear ordering for heatmap
-    print("Creating distance-based ordering...")
-    from scipy.spatial.distance import pdist, squareform
+        condensed_distances = pdist(data_matrix.values, metric="euclidean")
+        distance_matrix = squareform(condensed_distances)
+        distance_order = create_distance_based_ordering(data_matrix, distance_matrix)
 
-    condensed_distances = pdist(data_matrix.values, metric="euclidean")
-    distance_matrix = squareform(condensed_distances)
-    distance_order = create_distance_based_ordering(data_matrix, distance_matrix)
+        # Create visualizations using appropriate orderings
+        print(f"Creating dendrogram ({model_type} model)...")
+        plot_dendrogram_only(
+            linkage_matrix,
+            data_matrix.index,
+            str(model_output_dir / "motif_clustering_dendrogram.png"),
+        )
 
-    # Create visualizations using appropriate orderings
-    print("Creating dendrogram...")
-    plot_dendrogram_only(
-        linkage_matrix,
-        data_matrix.index,
-        str(output_dir / "motif_clustering_dendrogram.png"),
-    )
+        print(f"Creating distance-ordered heatmap ({model_type} model)...")
+        plot_heatmap_ordered(
+            data_matrix,
+            distance_order,
+            str(model_output_dir / "motif_clustering_heatmap.png"),
+        )
 
-    print("Creating distance-ordered heatmap...")
-    plot_heatmap_ordered(
-        data_matrix,
-        distance_order,
-        str(output_dir / "motif_clustering_heatmap.png"),
-    )
-
-    # Analyze motif linear ordering using distance-based ordering
-    print("Analyzing motif linear ordering...")
-    motif_order, component_df, ordering_positions = analyze_motif_ordering(
-        data_matrix, distance_order, clustered_data, str(output_dir / "motif_clustering")
-    )
+        # Analyze motif linear ordering using distance-based ordering
+        print(f"Analyzing motif linear ordering ({model_type} model)...")
+        motif_order, component_df, ordering_positions = analyze_motif_ordering(
+            data_matrix, distance_order, clustered_data, str(model_output_dir / "motif_clustering")
+        )
+        
+        print(f"✅ Completed processing for {model_type} model")
+    
+    print(f"\n📁 All results saved to: {output_dir}")
+    print("   - Uniform model: {}/uniform/".format(output_dir))
+    print("   - Region-specific model: {}/region_specific/".format(output_dir))
 
 
 if __name__ == "__main__":

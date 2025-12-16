@@ -13,8 +13,46 @@ from pathlib import Path
 
 # --- Dynamically load pie chart data from 02_output directory ---
 # Get repository root (assuming helpers/ is a subdirectory)
+import argparse
+parser = argparse.ArgumentParser(description="Analyze proportions over time")
+parser.add_argument('--base_output_dir', type=str, default=None,
+                   help='Base output directory for processing results (default: REPO_ROOT/02_output)')
+parser.add_argument('--helper_output_dir', type=str, default=None,
+                   help='Directory for helper script outputs (default: helpers/outputs/04_proportions_over_time_stats)')
+args = parser.parse_args()
+
 REPO_ROOT = Path(__file__).parent.parent
-OUTPUT_DIR = REPO_ROOT / "02_output"
+if args.base_output_dir:
+    OUTPUT_DIR = Path(args.base_output_dir)
+else:
+    OUTPUT_DIR = REPO_ROOT / "02_output"
+
+# Extract parameterization name and filter type from helper_output_dir if provided
+parameterization_filter = None
+filter_type = None
+if args.helper_output_dir:
+    helper_path = Path(args.helper_output_dir)
+    # Look for parameterization name in path (e.g., .../01.minimal_filter_parameters_..._helpers/...)
+    for part in helper_path.parts:
+        if part.startswith(('01.', '02.', '03.', '04.', '05.')):
+            # Extract parameterization name (before _helpers if present)
+            if '_helpers' in part:
+                parameterization_filter = part.split('_helpers')[0]
+            else:
+                parameterization_filter = part
+            # Extract filter type from parameterization name
+            if 'minimal' in part:
+                filter_type = 'minimal'
+            elif 'medium' in part:
+                filter_type = 'medium'
+            elif 'strict' in part:
+                filter_type = 'strict'
+            elif 'extreme' in part:
+                filter_type = 'extreme'
+            elif 'HAN' in part:
+                filter_type = 'HAN'
+            print(f"Filtering by parameterization: {parameterization_filter}, filter type: {filter_type}")
+            break
 
 # Define age groups (p3 was removed from manuscript, so we skip it)
 age_groups = ['p12', 'p20', 'p60']
@@ -28,17 +66,35 @@ target_types = [f'{i} target{"s" if i > 1 else ""}' for i in range(1, 8)]
 age_data = {}
 
 for age in age_groups:
-    # Look for aggregate pie chart files (matching pattern: {age}_ALL_HAN_filters_pie_chart_data.csv or {age}_alL_HAN_filters_pie_chart_data.csv)
-    # Search in subdirectories like p12/05.HAN_filter_parameters_*/analysis/
-    # Try both uppercase and lowercase variations
-    patterns = [
-        str(OUTPUT_DIR / age / "**" / f"*ALL_HAN_filters_pie_chart_data.csv"),
-        str(OUTPUT_DIR / age / "**" / f"*alL_HAN_filters_pie_chart_data.csv"),
-        str(OUTPUT_DIR / age / "**" / f"{age.upper()}_ALL_HAN_filters_pie_chart_data.csv"),
-        str(OUTPUT_DIR / age / "**" / f"{age.lower()}_ALL_HAN_filters_pie_chart_data.csv"),
-        str(OUTPUT_DIR / age / "**" / f"{age.upper()}_alL_HAN_filters_pie_chart_data.csv"),
-        str(OUTPUT_DIR / age / "**" / f"{age.lower()}_alL_HAN_filters_pie_chart_data.csv"),
-    ]
+    # Look for aggregate pie chart files
+    # Filter by parameterization and filter type if specified
+    if parameterization_filter and filter_type:
+        # Search only in the specific parameterization directory
+        param_path = OUTPUT_DIR / age / parameterization_filter
+        if param_path.exists():
+            patterns = [
+                str(param_path / "**" / f"*ALL_{filter_type}_filters_pie_chart_data.csv"),
+                str(param_path / "**" / f"*alL_{filter_type}_filters_pie_chart_data.csv"),
+                str(param_path / "**" / f"{age.upper()}_ALL_{filter_type}_filters_pie_chart_data.csv"),
+                str(param_path / "**" / f"{age.lower()}_ALL_{filter_type}_filters_pie_chart_data.csv"),
+                str(param_path / "**" / f"{age.upper()}_alL_{filter_type}_filters_pie_chart_data.csv"),
+                str(param_path / "**" / f"{age.lower()}_alL_{filter_type}_filters_pie_chart_data.csv"),
+                # Handle p60 uppercase variation
+                str(param_path / "**" / f"P60_ALL_{filter_type}_filters_pie_chart_data.csv"),
+                str(param_path / "**" / f"P60_alL_{filter_type}_filters_pie_chart_data.csv"),
+            ]
+        else:
+            patterns = []
+    else:
+        # Original behavior: search for HAN filters (backward compatibility)
+        patterns = [
+            str(OUTPUT_DIR / age / "**" / f"*ALL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR / age / "**" / f"*alL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR / age / "**" / f"{age.upper()}_ALL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR / age / "**" / f"{age.lower()}_ALL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR / age / "**" / f"{age.upper()}_alL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR / age / "**" / f"{age.lower()}_alL_HAN_filters_pie_chart_data.csv"),
+        ]
     files = []
     for pattern in patterns:
         files.extend(glob.glob(pattern, recursive=True))
@@ -149,7 +205,10 @@ observed = df_counts.values
 
 # Get script directory for saving outputs
 SCRIPT_DIR = Path(__file__).parent
-OUTPUT_DIR = SCRIPT_DIR.parent / "outputs" / "04_proportions_over_time_stats"
+if args.helper_output_dir:
+    OUTPUT_DIR = Path(args.helper_output_dir)
+else:
+    OUTPUT_DIR = SCRIPT_DIR.parent / "outputs" / "04_proportions_over_time_stats"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 summary_df = pd.DataFrame({

@@ -16,3 +16,11 @@ helpers/outputs/
 all_commands.txt
 qc_report_20251201_162437.txt
 qc_report_20251203_102137.txt
+figure_generation/generated_figures/05.HAN_filter_parameters_i300_r10_t10_u5_plot_matrix.tiff
+conclusions/stability_analysis_conclusions copy.md
+conclusions/stability_analysis_conclusions_archive.md
+conclusions/stability_analysis_conclusions.md
+conclusions/\[revision] \[manuscript] Neuron main manuscript Jacobs and Ratliff with Figures and SI.md
+conclusions/manuscript_discussion.md
+conclusions/manuscript_revised_sections.md
+conclusions/scripts/extracted_stability_data.json

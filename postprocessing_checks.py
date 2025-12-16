@@ -24,78 +24,88 @@ EXPECTED_MAIN_OUTPUTS = {
         'base_dir': '02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5',
         'required_files': ['*_Filtered_Matrix.csv', '*_Normalized_Matrix.csv', '*_UMI_Total_Counts.csv'],
         'analysis_dir': 'analysis',
-        'analysis_files': ['*_upsetplot.csv', '*_pie_chart_data.csv', '*_motif_obs_exp.csv']
+        'analysis_files': ['*_upsetplot_uniform.csv', '*_upsetplot_region_specific.csv', '*_pie_chart_data.csv', '*_motif_obs_exp_uniform.csv', '*_motif_obs_exp_region_specific.csv']
     },
     'p20': {
         'base_dir': '02_output/p20/05.HAN_filter_parameters_i300_r10_t10_u5',
         'required_files': ['*_Filtered_Matrix.csv', '*_Normalized_Matrix.csv', '*_UMI_Total_Counts.csv'],
         'analysis_dir': 'analysis',
-        'analysis_files': ['*_upsetplot.csv', '*_pie_chart_data.csv', '*_motif_obs_exp.csv']
+        'analysis_files': ['*_upsetplot_uniform.csv', '*_upsetplot_region_specific.csv', '*_pie_chart_data.csv', '*_motif_obs_exp_uniform.csv', '*_motif_obs_exp_region_specific.csv']
     },
     'p60': {
         'base_dir': '02_output/p60/05.HAN_filter_parameters_i300_r10_t10_u5',
         'required_files': ['*_Filtered_Matrix.csv', '*_Normalized_Matrix.csv', '*_UMI_Total_Counts.csv'],
         'analysis_dir': 'analysis',
-        'analysis_files': ['*_upsetplot.csv', '*_pie_chart_data.csv', '*_motif_obs_exp.csv']
+        'analysis_files': ['*_upsetplot_uniform.csv', '*_upsetplot_region_specific.csv', '*_pie_chart_data.csv', '*_motif_obs_exp_uniform.csv', '*_motif_obs_exp_region_specific.csv']
     }
 }
 
 EXPECTED_HELPER_OUTPUTS = {
     '01_motif_analysis_per_animal': {
         'dir': 'helpers/outputs/01_motif_analysis_per_animal',
-        'min_files': 3,
-        'expected_patterns': ['*.svg', '*.csv']
+        'min_files': 6,  # 3 files × 2 models (uniform + region_specific)
+        'expected_patterns': ['*.svg', '*.csv'],
+        'has_model_subdirs': True
     },
     '02_projection_analysis': {
         'dir': 'helpers/outputs/02_projection_analysis',
         'min_files': 9,  # 3 age comparisons × 4 plot types
-        'expected_patterns': ['*_vs_*.svg']
+        'expected_patterns': ['*_vs_*.svg'],
+        'has_model_subdirs': False
     },
     '03_composition': {
         'dir': 'helpers/outputs/03_composition',
         'min_files': 2,
-        'expected_patterns': ['*.svg']
+        'expected_patterns': ['*.svg'],
+        'has_model_subdirs': False
     },
     '04_proportions_over_time_stats': {
         'dir': 'helpers/outputs/04_proportions_over_time_stats',
         'min_files': 4,
-        'expected_patterns': ['*.png', '*.csv']
+        'expected_patterns': ['*.png', '*.csv'],
+        'has_model_subdirs': False
     },
     '05_motif_analysis': {
         'dir': 'helpers/outputs/05_motif_analysis',
-        'min_files': 5,
-        'expected_patterns': ['*.png', '*.csv', '*.txt']
+        'min_files': 10,  # 5 files × 2 models (uniform + region_specific)
+        'expected_patterns': ['*_uniform.*', '*_region_specific.*', '*.png', '*.csv', '*.txt'],
+        'has_model_subdirs': False  # Files have model suffixes instead
     },
     '06_all_motif_divergence': {
         'dir': 'helpers/outputs/06_all_motif_divergence',
-        'min_files': 3,
-        'expected_patterns': ['divergence_*.svg']
+        'min_files': 6,  # 3 files × 2 models (uniform + region_specific)
+        'expected_patterns': ['divergence_*.svg'],
+        'has_model_subdirs': True
     },
     '07_motif_significange_trajectories': {
         'dir': 'helpers/outputs/07_motif_significange_trajectories',
-        'min_files': 3,
-        'expected_patterns': ['*.csv', '*.svg', '*.pdf']
+        'min_files': 6,  # 3 files × 2 models (uniform + region_specific)
+        'expected_patterns': ['*.csv', '*.svg', '*.pdf'],
+        'has_model_subdirs': True
     },
     '08_motif_clustering': {
         'dir': 'helpers/outputs/08_motif_clustering',
-        'min_files': 4,
-        'expected_patterns': ['*.png']
+        'min_files': 8,  # 4 files × 2 models (uniform + region_specific)
+        'expected_patterns': ['*.png'],
+        'has_model_subdirs': True
     },
     '09_plot_normalized_projection_strength_data': {
         'dir': 'helpers/outputs/09_plot_normalized_projection_strength_data',
         'min_files': 20,
-        'expected_patterns': ['*.svg']
+        'expected_patterns': ['*.svg'],
+        'has_model_subdirs': False
     }
 }
 
 
 class QualityControlChecker:
-    def __init__(self, repo_root=None, log_file=None, output_file=None):
+    def __init__(self, repo_root=None, log_file=None, output_file=None, base_output_dir=None):
         if repo_root is None:
             repo_root = Path(__file__).parent
         self.repo_root = Path(repo_root)
         self.log_file = log_file
         self.output_file = output_file or self.repo_root / f"qc_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        self.base_output_dir = Path(base_output_dir) if base_output_dir else None
         
         self.findings = {
             'errors': [],
@@ -475,8 +485,66 @@ class QualityControlChecker:
         """Check main processing outputs in 02_output directories"""
         self.findings['info'].append("\n=== Main Processing Outputs ===")
         
-        for age, config in EXPECTED_MAIN_OUTPUTS.items():
-            base_dir = self.repo_root / config['base_dir']
+        # Extract age from base_output_dir if provided
+        detected_age = None
+        if self.base_output_dir:
+            base_path = Path(self.base_output_dir)
+            # Check if path contains an age directory (p3, p12, p20, p60)
+            for part in base_path.parts:
+                part_lower = part.lower()
+                if part_lower in ['p3', 'p12', 'p20', 'p60']:
+                    detected_age = part_lower
+                    break
+        
+        # Filter ages to check based on detected age
+        ages_to_check = list(EXPECTED_MAIN_OUTPUTS.items())
+        if detected_age:
+            # Only check the matching age
+            if detected_age in EXPECTED_MAIN_OUTPUTS:
+                ages_to_check = [(detected_age, EXPECTED_MAIN_OUTPUTS[detected_age])]
+            else:
+                # Age not in expected list (e.g., p3), check it anyway with default config
+                self.findings['info'].append(f"Checking age {detected_age} (not in standard list)")
+                # Try to extract parameterization from path
+                parameterization = None
+                for part in base_path.parts:
+                    if part.startswith(('01.', '02.', '03.', '04.', '05.')):
+                        parameterization = part
+                        break
+                
+                if parameterization:
+                    base_dir_str = f"02_output/{detected_age}/{parameterization}"
+                else:
+                    # Use the provided base_output_dir as-is
+                    base_dir_str = str(self.base_output_dir.relative_to(self.repo_root)) if self.base_output_dir.is_relative_to(self.repo_root) else None
+                
+                ages_to_check = [(detected_age, {
+                    'base_dir': base_dir_str,
+                    'required_files': ['*_Filtered_Matrix.csv', '*_Normalized_Matrix.csv', '*_UMI_Total_Counts.csv'],
+                    'analysis_dir': 'analysis',
+                    'analysis_files': ['*_upsetplot_uniform.csv', '*_upsetplot_region_specific.csv', '*_pie_chart_data.csv', '*_motif_obs_exp_uniform.csv', '*_motif_obs_exp_region_specific.csv']
+                })]
+        
+        for age, config in ages_to_check:
+            if self.base_output_dir:
+                if detected_age and detected_age == age:
+                    # Use the provided base_output_dir directly for the matching age
+                    base_dir = self.base_output_dir
+                else:
+                    # Construct path relative to base_output_dir for other ages
+                    # If base_output_dir is age-specific, this shouldn't happen due to filtering above
+                    # But handle case where base_output_dir is a parent directory
+                    # Extract parameterization from config if available
+                    config_path = Path(config['base_dir'])
+                    if len(config_path.parts) >= 3:
+                        # Expected format: 02_output/{age}/{parameterization}
+                        parameterization = config_path.parts[-1]
+                        base_dir = self.base_output_dir / age / parameterization
+                    else:
+                        # Fallback: try to construct from config
+                        base_dir = self.base_output_dir / config['base_dir']
+            else:
+                base_dir = self.repo_root / config['base_dir']
             analysis_dir = base_dir / config['analysis_dir']
             
             if not base_dir.exists():
@@ -507,9 +575,18 @@ class QualityControlChecker:
             else:
                 self.findings['warnings'].append(f"{age}: No main output files found")
             
-            # Check analysis directory
+            # Check analysis directory (including model subdirectories)
             if analysis_dir.exists():
                 analysis_files = []
+                # Check in model subdirectories (uniform/ and region_specific/)
+                for model_type in ['uniform', 'region_specific']:
+                    model_dir = analysis_dir / model_type
+                    if model_dir.exists():
+                        for pattern in config['analysis_files']:
+                            files = list(model_dir.glob(pattern))
+                            analysis_files.extend(files)
+                
+                # Also check main analysis directory for backward compatibility and non-model-specific files
                 for pattern in config['analysis_files']:
                     files = list(analysis_dir.glob(pattern))
                     analysis_files.extend(files)
@@ -526,15 +603,74 @@ class QualityControlChecker:
             else:
                 self.findings['warnings'].append(f"{age}: Analysis directory not found: {analysis_dir}")
             
-            # Check for aggregate upsetplot files (in analysis directory)
+            # Check for aggregate upsetplot files (in model subdirectories)
             if analysis_dir.exists():
-                agg_upsetplot = list(analysis_dir.glob(f"{age.upper()}_ALL_HAN_filters_upsetplot.csv")) + \
-                               list(analysis_dir.glob(f"{age.lower()}_ALL_HAN_filters_upsetplot.csv")) + \
-                               list(analysis_dir.glob(f"p{age[1:]}_ALL_HAN_filters_upsetplot.csv"))
-                if agg_upsetplot:
-                    self.findings['successes'].append(f"{age}: Aggregate upsetplot file found: {agg_upsetplot[0].name}")
-                else:
-                    self.findings['warnings'].append(f"{age}: Aggregate upsetplot file not found in analysis directory")
+                agg_upsetplot_uniform = []
+                agg_upsetplot_region_specific = []
+                
+                # Check uniform subdirectory
+                uniform_dir = analysis_dir / 'uniform'
+                if uniform_dir.exists():
+                    # Try multiple pattern variations to handle case differences
+                    # Only match files that START with the age prefix (aggregate files)
+                    patterns_uniform = [
+                        f"{age.upper()}_ALL_*_filters_upsetplot_uniform.csv",  # P12_ALL_*_filters_upsetplot_uniform.csv
+                        f"{age.lower()}_ALL_*_filters_upsetplot_uniform.csv",  # p12_ALL_*_filters_upsetplot_uniform.csv
+                        f"P{age[1:]}_ALL_*_filters_upsetplot_uniform.csv",  # P12_ALL_*_filters_upsetplot_uniform.csv (alternative)
+                        f"p{age[1:]}_ALL_*_filters_upsetplot_uniform.csv",  # p12_ALL_*_filters_upsetplot_uniform.csv (alternative)
+                    ]
+                    for pattern in patterns_uniform:
+                        matches = list(uniform_dir.glob(pattern))
+                        agg_upsetplot_uniform.extend(matches)
+                    # Remove duplicates while preserving order
+                    agg_upsetplot_uniform = list(dict.fromkeys(agg_upsetplot_uniform))
+                    # Filter to ensure we only have aggregate files (start with age prefix, not individual animal names)
+                    agg_upsetplot_uniform = [f for f in agg_upsetplot_uniform if f.name.startswith((age.upper(), age.lower(), f"P{age[1:]}", f"p{age[1:]}"))]
+                
+                # Check region_specific subdirectory
+                region_specific_dir = analysis_dir / 'region_specific'
+                if region_specific_dir.exists():
+                    # Try multiple pattern variations to handle case differences
+                    # Only match files that START with the age prefix (aggregate files)
+                    patterns_region_specific = [
+                        f"{age.upper()}_ALL_*_filters_upsetplot_region_specific.csv",  # P12_ALL_*_filters_upsetplot_region_specific.csv
+                        f"{age.lower()}_ALL_*_filters_upsetplot_region_specific.csv",  # p12_ALL_*_filters_upsetplot_region_specific.csv
+                        f"P{age[1:]}_ALL_*_filters_upsetplot_region_specific.csv",  # P12_ALL_*_filters_upsetplot_region_specific.csv (alternative)
+                        f"p{age[1:]}_ALL_*_filters_upsetplot_region_specific.csv",  # p12_ALL_*_filters_upsetplot_region_specific.csv (alternative)
+                    ]
+                    for pattern in patterns_region_specific:
+                        matches = list(region_specific_dir.glob(pattern))
+                        agg_upsetplot_region_specific.extend(matches)
+                    # Remove duplicates while preserving order
+                    agg_upsetplot_region_specific = list(dict.fromkeys(agg_upsetplot_region_specific))
+                    # Filter to ensure we only have aggregate files (start with age prefix, not individual animal names)
+                    agg_upsetplot_region_specific = [f for f in agg_upsetplot_region_specific if f.name.startswith((age.upper(), age.lower(), f"P{age[1:]}", f"p{age[1:]}"))]
+                
+                # Check main directory for backward compatibility (old single-model structure)
+                patterns_main = [
+                    f"{age.upper()}_ALL_HAN_filters_upsetplot.csv",
+                    f"{age.lower()}_ALL_HAN_filters_upsetplot.csv",
+                    f"P{age[1:]}_ALL_HAN_filters_upsetplot.csv",
+                    f"p{age[1:]}_ALL_HAN_filters_upsetplot.csv",
+                ]
+                agg_upsetplot_main = []
+                for pattern in patterns_main:
+                    matches = list(analysis_dir.glob(pattern))
+                    agg_upsetplot_main.extend(matches)
+                # Remove duplicates while preserving order
+                agg_upsetplot_main = list(dict.fromkeys(agg_upsetplot_main))
+                # Filter to ensure we only have aggregate files (start with age prefix)
+                agg_upsetplot_main = [f for f in agg_upsetplot_main if f.name.startswith((age.upper(), age.lower(), f"P{age[1:]}", f"p{age[1:]}"))]
+                
+                if agg_upsetplot_uniform:
+                    self.findings['successes'].append(f"{age}: Aggregate upsetplot file found (uniform model): {agg_upsetplot_uniform[0].name}")
+                if agg_upsetplot_region_specific:
+                    self.findings['successes'].append(f"{age}: Aggregate upsetplot file found (region_specific model): {agg_upsetplot_region_specific[0].name}")
+                if agg_upsetplot_main:
+                    self.findings['info'].append(f"{age}: Aggregate upsetplot file found in main directory (backward compatibility): {agg_upsetplot_main[0].name}")
+                
+                if not agg_upsetplot_uniform and not agg_upsetplot_region_specific and not agg_upsetplot_main:
+                    self.findings['warnings'].append(f"{age}: Aggregate upsetplot file not found in analysis directory or model subdirectories")
     
     def check_helper_outputs(self):
         """Check helper script outputs"""
@@ -543,15 +679,44 @@ class QualityControlChecker:
         helper_outputs_found = False
         
         for script_name, config in EXPECTED_HELPER_OUTPUTS.items():
-            output_dir = self.repo_root / config['dir']
+            # Check if we should look in parameterization-specific helper directory
+            if self.base_output_dir:
+                # Try to find parameterization from base_output_dir
+                base_path = Path(self.base_output_dir)
+                parameterization = None
+                for part in base_path.parts:
+                    if part.startswith(('01.', '02.', '03.', '04.', '05.')) and '_helpers' not in part:
+                        parameterization = part
+                        break
+                
+                if parameterization:
+                    # Look in parameterization-specific helper directory
+                    output_dir = self.repo_root / "02_output" / f"{parameterization}_helpers" / script_name
+                else:
+                    # Fall back to default location
+                    output_dir = self.repo_root / config['dir']
+            else:
+                output_dir = self.repo_root / config['dir']
             
             if not output_dir.exists():
                 self.findings['warnings'].append(f"{script_name}: Output directory not found: {output_dir}")
                 continue
             
-            # Count files
-            all_files = list(output_dir.rglob('*'))
-            files = [f for f in all_files if f.is_file()]
+            # Count files (including model subdirectories if applicable)
+            all_files = []
+            if config.get('has_model_subdirs', False):
+                # Check in model subdirectories
+                for model_type in ['uniform', 'region_specific']:
+                    model_dir = output_dir / model_type
+                    if model_dir.exists():
+                        all_files.extend([f for f in model_dir.rglob('*') if f.is_file()])
+                # Also check main directory for backward compatibility
+                all_files.extend([f for f in output_dir.rglob('*') if f.is_file() and f.parent == output_dir])
+            else:
+                # Check for model suffixes in filenames (for script 05)
+                all_files = [f for f in output_dir.rglob('*') if f.is_file()]
+            
+            files = all_files
             file_count = len(files)
             self.stats['total_output_files'] += file_count
             
@@ -569,6 +734,17 @@ class QualityControlChecker:
                 if matching_files:
                     self.findings['info'].append(f"  {script_name}: Found {len(matching_files)} files matching {pattern}")
                     helper_outputs_found = True
+            
+            # Check for model subdirectories if applicable
+            if config.get('has_model_subdirs', False):
+                uniform_dir = output_dir / 'uniform'
+                region_specific_dir = output_dir / 'region_specific'
+                if uniform_dir.exists():
+                    uniform_files = [f for f in uniform_dir.rglob('*') if f.is_file()]
+                    self.findings['info'].append(f"  {script_name}: Found {len(uniform_files)} files in uniform/ subdirectory")
+                if region_specific_dir.exists():
+                    region_specific_files = [f for f in region_specific_dir.rglob('*') if f.is_file()]
+                    self.findings['info'].append(f"  {script_name}: Found {len(region_specific_files)} files in region_specific/ subdirectory")
         
         # If no helper outputs were found, add a message
         if not helper_outputs_found:
@@ -849,13 +1025,20 @@ def main():
         default=None,
         help='Output report file path (default: qc_report_TIMESTAMP.txt)'
     )
+    parser.add_argument(
+        '--base_output_dir',
+        type=str,
+        default=None,
+        help='Base output directory for processing results (default: repo_root/02_output). If specified, will check this directory instead of hardcoded paths.'
+    )
     
     args = parser.parse_args()
     
     checker = QualityControlChecker(
         repo_root=args.repo_root,
         log_file=args.log_file,
-        output_file=args.output
+        output_file=args.output,
+        base_output_dir=args.base_output_dir
     )
     
     checker.run_checks()

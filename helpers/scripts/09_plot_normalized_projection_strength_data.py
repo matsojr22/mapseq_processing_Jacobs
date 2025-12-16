@@ -92,18 +92,49 @@ def main(data_dir, output_dir=None, file_type='auto', all_ages_base_dir=None):
                         all_ages_base_dir = str(Path(*path_parts[:i]))
                         break
         
+        # Extract parameterization name from output_dir if provided
+        parameterization_filter = None
+        if output_dir:
+            output_path = Path(output_dir)
+            # Look for parameterization name in path (e.g., .../01.minimal_filter_parameters_..._helpers/...)
+            for part in output_path.parts:
+                if part.startswith(('01.', '02.', '03.', '04.', '05.')) and '_helpers' in part:
+                    # Extract just the parameterization name (before _helpers)
+                    parameterization_filter = part.split('_helpers')[0]
+                    print(f"Filtering by parameterization: {parameterization_filter}")
+                    break
+                elif part.startswith(('01.', '02.', '03.', '04.', '05.')):
+                    parameterization_filter = part
+                    print(f"Filtering by parameterization: {parameterization_filter}")
+                    break
+        
         # Find aggregate files from all age groups
         age_groups = ['p12', 'p20', 'p60']
         all_age_aggregate_files = {}
         
         for age in age_groups:
             # Search for aggregate files in this age's motif_raw_data directory
-            age_pattern = os.path.join(all_ages_base_dir, age, "**", "*ALL*_raw_data.csv")
-            age_files = glob.glob(age_pattern, recursive=True)
-            # Also try case variations
-            if not age_files:
-                age_pattern = os.path.join(all_ages_base_dir, age, "**", f"*{age.upper()}*ALL*_raw_data.csv")
+            # Filter by parameterization if specified
+            if parameterization_filter:
+                # Search only in the specific parameterization directory
+                param_path = Path(all_ages_base_dir) / age / parameterization_filter
+                if param_path.exists():
+                    age_pattern = str(param_path / "**" / "*ALL*_raw_data.csv")
+                    age_files = glob.glob(age_pattern, recursive=True)
+                    # Also try case variations
+                    if not age_files:
+                        age_pattern = str(param_path / "**" / f"*{age.upper()}*ALL*_raw_data.csv")
+                        age_files = glob.glob(age_pattern, recursive=True)
+                else:
+                    age_files = []
+            else:
+                # Original behavior: search all parameterizations
+                age_pattern = os.path.join(all_ages_base_dir, age, "**", "*ALL*_raw_data.csv")
                 age_files = glob.glob(age_pattern, recursive=True)
+                # Also try case variations
+                if not age_files:
+                    age_pattern = os.path.join(all_ages_base_dir, age, "**", f"*{age.upper()}*ALL*_raw_data.csv")
+                    age_files = glob.glob(age_pattern, recursive=True)
             
             if age_files:
                 all_age_aggregate_files[age] = age_files

@@ -3,7 +3,6 @@ import os
 import re
 import sympy
 import csv
-import shutil
 import numpy as np
 import pandas as pd
 from sympy import symbols, Product, Array, N, latex
@@ -539,9 +538,8 @@ print("Region-specific Probabilities:", psdict)
 # Define symbolic variable for p_e
 pe = symbols('p_e')
 
-# Solve for symbolic p_e using N0 (estimated population) instead of total_projections
-# This is the mathematically correct equation: (1 - (1 - pₑ)^n) × N₀ = N_obs
-pe_solutions = sympy.solve((1 - (1 - pe)**len(projections)) * N0_value - observed_cells, pe, force=True)
+# Solve for symbolic p_e
+pe_solutions = sympy.solve((1 - (1 - pe)**len(projections)) * total_projections - observed_cells, pe, force=True)
 
 # Extract only real solutions within (0,1)
 #valid_symbolic_solutions = [sol.evalf() for sol in pe_solutions if sol.is_real and 0 < sol < 1]
@@ -581,97 +579,28 @@ print(f"🔍 Valid p_e symbolic solution(s): {valid_symbolic_solutions}")
 print(f"🔍 Empirical p_e solution: {pe_empirical}")
 print(f"🚨 Numeric p_e being used: {pe_num}, computed as mean valid symbolic solution if one exists else uses emperical solution.")
 
-# ============================================================================
-# METHOD 1: UNIFORM EDGE PROBABILITY MODEL (pₑ-based)
-# ============================================================================
-print("\n" + "="*80)
-print("METHOD 1: UNIFORM EDGE PROBABILITY MODEL (pₑ-based)")
-print("="*80)
-
 # Define total_regions BEFORE computing motif probabilities
 total_regions = len(columns)  # Number of regions after filtering
 
-# Compute motif probabilities using uniform pₑ (Ensuring n starts from 1, since n=0 isn't meaningful here)
-motif_probs_uniform = {
+# Compute motif probabilities (Ensuring n starts from 1, since n=0 isn't meaningful here)
+motif_probs = {
     n: (pe_num ** n) * ((1 - pe_num) ** (total_regions - n))
     for n in range(1, total_regions + 1)  # Start at 1
 }
 
 # Normalize probabilities to ensure they sum to exactly 1
-total_motif_prob_uniform = sum(motif_probs_uniform.values())
+total_motif_prob = sum(motif_probs.values())
 
-if total_motif_prob_uniform > 0:
-    motif_probs_uniform = {k: v / total_motif_prob_uniform for k, v in motif_probs_uniform.items()}
+if total_motif_prob > 0:
+    motif_probs = {k: v / total_motif_prob for k, v in motif_probs.items()}
 
 # Debugging print statements
-print(f"🔍 [UNIFORM MODEL] Total Motif Probability Before Normalization: {total_motif_prob_uniform}")
-print(f"🔍 [UNIFORM MODEL] Total Motif Probability After Normalization (must sum to 1): {sum(motif_probs_uniform.values())}")
+print(f"🔍 Total Motif Probability Before Normalization: {total_motif_prob}")
+print(f"🔍 Total Motif Probability After Normalization (must sum to 1): {sum(motif_probs.values())}")
 
 # Final check: Ensure sum is 1
-if not np.isclose(float(sum(motif_probs_uniform.values())), 1, atol=0.01):
-    print(f"🚨 WARNING: [UNIFORM MODEL] Motif probabilities sum to {sum(motif_probs_uniform.values())}, not 1.")
-
-# Keep for backward compatibility
-motif_probs = motif_probs_uniform
-
-# ============================================================================
-# METHOD 2: REGION-SPECIFIC PROBABILITY MODEL (Old Pipeline Method)
-# ============================================================================
-print("\n" + "="*80)
-print("METHOD 2: REGION-SPECIFIC PROBABILITY MODEL (Old Pipeline Method)")
-print("="*80)
-
-# Calculate region-specific probabilities using N0 (like old pipeline)
-# Old pipeline: p[i] = N_i / N_total
-# Where N_i = number of neurons projecting to region i
-#       N_total = estimated total population (N0)
-print(f"🔍 [REGION-SPECIFIC MODEL] Calculating probabilities using N0 = {N0_value}")
-psdict_region_specific = {region: (count / float(N0_value)) for region, count in projections.items()}
-print(f"🔍 [REGION-SPECIFIC MODEL] Region-specific probabilities (p_i = N_i / N0): {psdict_region_specific}")
-
-# Verify probabilities sum to reasonable value (should be < 1 since neurons can project to multiple regions)
-total_region_prob = sum(psdict_region_specific.values())
-print(f"🔍 [REGION-SPECIFIC MODEL] Sum of region probabilities: {total_region_prob} (expected > 1 since neurons can project to multiple regions)")
-
-def compute_motif_probabilities_region_specific(motif_labels, region_probs_dict, region_names):
-    """
-    Compute motif probabilities using region-specific probabilities (old pipeline method).
-    
-    Formula: P(motif) = ∏_{i in motif} p_i × ∏_{j not in motif} (1 - p_j)
-    
-    Args:
-        motif_labels: List of motif labels (each is a list of region names)
-        region_probs_dict: Dictionary mapping region names to probabilities
-        region_names: List of all region names (in order)
-    
-    Returns:
-        Dictionary mapping motif index to probability
-    """
-    motif_probs_rs = {}
-    
-    for i, motif_regions in enumerate(motif_labels):
-        if not motif_regions or (len(motif_regions) == 1 and not motif_regions[0]):
-            # Empty motif (no projections)
-            motif_probs_rs[i] = 0.0
-            continue
-        
-        # Calculate probability for this specific motif
-        # P(motif) = ∏_{regions in motif} p_region × ∏_{regions not in motif} (1 - p_region)
-        prob = 1.0
-        for region in region_names:
-            if region in motif_regions:
-                # Region is in motif: multiply by p_region
-                prob *= region_probs_dict.get(region, 0.0)
-            else:
-                # Region is not in motif: multiply by (1 - p_region)
-                prob *= (1.0 - region_probs_dict.get(region, 0.0))
-        
-        motif_probs_rs[i] = prob
-    
-    return motif_probs_rs
-
-# Note: Region-specific motif probabilities will be calculated later when motif_labels are available
-# (after line 1114 where motif_labels = gen_motifs(...))
+if not np.isclose(float(sum(motif_probs.values())), 1, atol=0.01):
+    print(f"🚨 WARNING: Motif probabilities sum to {sum(motif_probs.values())}, not 1.")
 
 normalized_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Normalized_Matrix.csv"))
 
@@ -688,7 +617,6 @@ column_counts_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Colu
 root_save_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Roots.csv"))
 pi_save_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Simplified_Pi.csv"))
 region_probs_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Region-specific_Probabilities.csv"))
-region_probs_rs_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Region-specific_Probabilities_N0based.csv"))
 calculated_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Calculated_Value.csv"))
 std_dev_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Standard_Deviation.csv"))
 motif_test_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Motif_Binomial_Results.csv"))
@@ -701,10 +629,9 @@ zero_labels = [label for label in columns if psdict.get(label, 0) <= 0]
 if zero_labels:
     print(f"⚠️ Warning: Zero or missing probabilities for labels: {zero_labels}")
 
-# Dynamic calculation using N0 (estimated population) - this verifies the pₑ solution
-calculated_value = (1 - (1 - pe_num)**len(columns)) * N0_value
-print(f"🔍 Expected Observed Projections [(1-(1-p_e)*#areas)*N0]: {calculated_value}")
-print(f"🔍 This should approximately equal observed_cells ({observed_cells}) if pₑ is correct")
+# Dynamic calculation using sample_labels and total_projections
+calculated_value = (1 - (1 - pe_num)**len(columns)) * observed_cells #total_projections
+print(f"🔍 Expected Observed Projections [(1-(1-p_e)*#areas)*observed cells]: {calculated_value}")
 
 # Save LaTeX representation of calculated value
 save_latex_expression(calculated_value, "Calculated Value Visualization", os.path.normpath(os.path.join(out_dir, f"{sample_name}_Calculated_Value.png")))
@@ -722,13 +649,12 @@ observed_motif_sizes = np.unique(np.sum(normalized_matrix > 0, axis=1))  # Uniqu
 motif_counts = [np.sum(np.sum(normalized_matrix > 0, axis=1) == size) for size in observed_motif_sizes]
 
 # Debugging printout: Show motif counts (Observed vs Expected)
-# FIXED: Use N0 for expected counts to match alternative pipeline
-print("\n==== Motif Observed vs Expected Counts (using N0) ============")
+print("\n==== Motif Observed vs Expected Counts ============")
 for i, motif_size in enumerate(observed_motif_sizes):
     observed = motif_counts[i]  # Observed count
-    expected = int(motif_probs.get(motif_size, 0) * N0_value)  # Expected count based on probabilities and N0
+    expected = int(motif_probs.get(motif_size, 0) * observed_cells)  # Expected count based on probabilities
 
-    print(f"Motif Size: {motif_size:5} | Observed: {observed:5} | Expected: {expected:5} (N0={N0_value:.1f})")
+    print(f"Motif Size: {motif_size:5} | Observed: {observed:5} | Expected: {expected:5}")
 
 print("\n===================================================")
 
@@ -742,15 +668,11 @@ total_motif_prob = sum(motif_probs.values())
 motif_probs = {k: v / total_motif_prob for k, v in motif_probs.items()}
 
 # Perform binomial test for each observed motif size
-# FIXED: Use two-tailed test (binomtest) with N0 instead of one-tailed (binom.sf) with observed_cells
-# This matches the alternative pipeline's more rigorous approach
-print(f"🔍 [UNIFORM MODEL] Performing two-tailed binomial tests using N0 = {N0_value} (not observed_cells = {observed_cells})")
 binomial_test_results = []
 for n_proj in observed_motif_sizes:
     obs_count = int(motif_counts[observed_motif_sizes.tolist().index(n_proj)])  # Ensure integer
     prob = float(motif_probs.get(n_proj, 0))  # Ensure float
-    # Use binomtest (two-tailed) with N0_value instead of binom.sf (one-tailed) with observed_cells
-    p_value = binomtest(obs_count, n=int(N0_value), p=prob).pvalue  # Two-tailed test with N0
+    p_value = binom.sf(obs_count - 1, int(observed_cells), prob)  # Use proper types
     binomial_test_results.append((n_proj, prob, p_value))  # Append tuple with 3 elements
 
 # Debugging
@@ -852,13 +774,7 @@ os.makedirs(analysis_dir, exist_ok=True)
 plot_dir = analysis_dir
 csv_output_dir = os.path.join(plot_dir, "motif_raw_data")
 
-# Create model-specific subdirectories for dual-model plots
-uniform_plot_dir = os.path.normpath(os.path.join(plot_dir, 'uniform'))
-region_specific_plot_dir = os.path.normpath(os.path.join(plot_dir, 'region_specific'))
-os.makedirs(uniform_plot_dir, exist_ok=True)
-os.makedirs(region_specific_plot_dir, exist_ok=True)
-
-n0 = N0_value  # Use estimated population (N0) instead of observed_cells for motif expected counts
+n0 = observed_cells #import from stats at beginning
 
 np.set_printoptions(suppress=True)
 
@@ -1145,20 +1061,13 @@ def get_expected_counts(motifs, num_regions = 7, prob_edge=pe_num,n=n0):
     res[0] = 0
     return res, probs
 
-# ============================================================================
-# UNIFORM MODEL: Expected counts and results
-# ============================================================================
-print("\n" + "="*80)
-print("[UNIFORM MODEL] Calculating expected counts for all motifs...")
-print("="*80)
-
 exp_counts, motif_probs = get_expected_counts(motif_labels)
 df_obs_exp = pd.DataFrame(data=[concatenate_list_data(motif_labels),\
                                 dcounts,\
                                 exp_counts.astype(int)]).T
 df_obs_exp.columns = ['Motif','Observed','Expected']
-df_obs_exp.to_csv(os.path.normpath(os.path.join(plot_dir, sample_name + "_motif_obs_exp_uniform.csv")))
-print(f"💾 [UNIFORM MODEL] Saved motif obs/exp to: {sample_name}_motif_obs_exp_uniform.csv")
+df_obs_exp.to_csv(os.path.normpath(os.path.join(plot_dir, sample_name + "_motif_obs_exp.csv")))
+df_obs_exp
 
 ##suggested addition to give another csv without the null combination from the powerset at the top row.
 exp_counts, motif_probs = get_expected_counts(motif_labels)
@@ -1170,97 +1079,9 @@ df_obs_exp = df_obs_exp[df_obs_exp['Motif'] != ""]  # Adjust condition as needed
 
 # Save filtered data to CSV
 df_obs_exp.to_csv(
-    os.path.normpath(os.path.join(plot_dir, f"{sample_name}_motif_obs_exp_uniform_filtered.csv")),
+    os.path.normpath(os.path.join(plot_dir, f"{sample_name}_motif_obs_exp_filtered.csv")),
     index=False
 )
-print(f"💾 [UNIFORM MODEL] Saved filtered motif obs/exp to: {sample_name}_motif_obs_exp_uniform_filtered.csv")
-
-# ============================================================================
-# REGION-SPECIFIC MODEL: Expected counts and results (Old Pipeline Method)
-# ============================================================================
-print("\n" + "="*80)
-print("[REGION-SPECIFIC MODEL] Calculating probabilities and expected counts for all motifs...")
-print("="*80)
-
-# Compute motif probabilities using region-specific model
-print(f"🔍 [REGION-SPECIFIC MODEL] Computing probabilities for {len(motif_labels)} motifs...")
-motif_probs_region_specific = compute_motif_probabilities_region_specific(
-    motif_labels, psdict_region_specific, columns
-)
-
-# Calculate total probability (should be close to 1, but may not be exactly 1 due to numerical precision)
-total_motif_prob_rs = sum(motif_probs_region_specific.values())
-print(f"🔍 [REGION-SPECIFIC MODEL] Total motif probability sum: {total_motif_prob_rs}")
-
-# Normalize if needed (though theoretically should already sum to 1)
-if total_motif_prob_rs > 0:
-    motif_probs_region_specific = {k: v / total_motif_prob_rs for k, v in motif_probs_region_specific.items()}
-    print(f"🔍 [REGION-SPECIFIC MODEL] Normalized probabilities (sum = {sum(motif_probs_region_specific.values())})")
-else:
-    print(f"🚨 WARNING: [REGION-SPECIFIC MODEL] Total motif probability is 0 or negative!")
-
-print(f"✅ [REGION-SPECIFIC MODEL] Computed probabilities for {len(motif_probs_region_specific)} motifs")
-
-# Save region-specific probabilities to CSV
-df_region_probs_rs = pd.DataFrame({
-    'Region': list(psdict_region_specific.keys()),
-    'Probability': list(psdict_region_specific.values()),
-    'Projection_Count': [projections.get(r, 0) for r in psdict_region_specific.keys()],
-    'N0': [N0_value] * len(psdict_region_specific)
-})
-df_region_probs_rs.to_csv(region_probs_rs_path, index=False)
-print(f"💾 [REGION-SPECIFIC MODEL] Saved region-specific probabilities (N0-based) to: {region_probs_rs_path}")
-
-# Calculate expected counts using region-specific probabilities
-def get_expected_counts_region_specific(motif_labels, motif_probs_dict, n=n0):
-    """
-    Calculate expected counts for each motif using region-specific probabilities.
-    
-    Args:
-        motif_labels: List of motif labels (each is a list of region names)
-        motif_probs_dict: Dictionary mapping motif index to probability
-        n: Total population size (N0)
-    
-    Returns:
-        Array of expected counts for each motif
-    """
-    n_motifs = len(motif_labels)
-    res = np.zeros(n_motifs)
-    probs = np.zeros(n_motifs)
-    
-    for i in range(n_motifs):
-        prob = motif_probs_dict.get(i, 0.0)
-        probs[i] = prob
-        exp = float(prob) * float(n)
-        res[i] = exp
-    
-    res[0] = 0  # Empty motif (no projections)
-    return res, probs
-
-exp_counts_rs, motif_probs_rs_array = get_expected_counts_region_specific(
-    motif_labels, motif_probs_region_specific, n=n0
-)
-
-print(f"🔍 [REGION-SPECIFIC MODEL] Calculated expected counts for {len(exp_counts_rs)} motifs")
-print(f"🔍 [REGION-SPECIFIC MODEL] Total expected count: {np.sum(exp_counts_rs):.2f} (should be close to N0 = {n0})")
-
-# Create DataFrame for region-specific model
-df_obs_exp_rs = pd.DataFrame(data=[
-    concatenate_list_data(motif_labels),
-    dcounts,
-    exp_counts_rs.astype(int)
-]).T
-df_obs_exp_rs.columns = ['Motif', 'Observed', 'Expected']
-df_obs_exp_rs.to_csv(os.path.normpath(os.path.join(plot_dir, sample_name + "_motif_obs_exp_region_specific.csv")))
-print(f"💾 [REGION-SPECIFIC MODEL] Saved motif obs/exp to: {sample_name}_motif_obs_exp_region_specific.csv")
-
-# Exclude empty motifs
-df_obs_exp_rs_filtered = df_obs_exp_rs[df_obs_exp_rs['Motif'] != ""].copy()
-df_obs_exp_rs_filtered.to_csv(
-    os.path.normpath(os.path.join(plot_dir, f"{sample_name}_motif_obs_exp_region_specific_filtered.csv")),
-    index=False
-)
-print(f"💾 [REGION-SPECIFIC MODEL] Saved filtered motif obs/exp to: {sample_name}_motif_obs_exp_region_specific_filtered.csv")
 
 
 def standardize_pos(x):
@@ -1293,9 +1114,7 @@ def get_motif_sig_pts(dcounts,labels,\
     dcounts_ = dcounts_.astype(int)
     for i in range(num_nonzid_motifs):
         pi = max(probs_[i], 1e-10) #avoid zero or very small probs
-        # Uses binomtest (two-tailed) with n0 (which is N0_value) - matches alternative pipeline
-        # Convert n0 to int as binomtest requires integer n
-        matches[i] = binomtest(int(dcounts_[i]),n=int(n0),p=pi).pvalue
+        matches[i] = binomtest(int(dcounts_[i]),n=n0,p=pi).pvalue
         matches[i] = max(matches[i], 1e-10)
     matches = p_transform(matches)
     #matches is the significance level
@@ -1303,176 +1122,84 @@ def get_motif_sig_pts(dcounts,labels,\
     mlabels = [labels[h] for h in nonzid]
     return list(res), mlabels
 
-# ============================================================================
-# UNIFORM MODEL: Statistical testing
-# ============================================================================
-print("\n" + "="*80)
-print("[UNIFORM MODEL] Performing statistical tests...")
-print("="*80)
-
 #SET TO TRUE IF YOU WANT TO EXCLUDE ZERO MOTIFS
 sigs, slabels = get_motif_sig_pts(dcounts,motif_labels,exclude_zeros=False)
-print(f"✅ [UNIFORM MODEL] Statistical tests completed for {len(slabels)} motifs")
 
-# ============================================================================
-# REGION-SPECIFIC MODEL: Statistical testing (Old Pipeline Method)
-# ============================================================================
-print("\n" + "="*80)
-print("[REGION-SPECIFIC MODEL] Performing statistical tests...")
-print("="*80)
+#Bonferroni correction: p-threshold / Num comparisons
+pcutoff = -1*np.log10(alpha / len(slabels)) #adjust alpha with argument
 
-def get_motif_sig_pts_region_specific(dcounts, labels, motif_probs_dict, n0=n0,
-                                      exclude_zeros=True,
-                                      p_transform=lambda x: -1 * np.log10(x)):
-    """
-    Calculate significance for motifs using region-specific probabilities (old pipeline method).
-    
-    Args:
-        dcounts: Observed counts for each motif
-        labels: Motif labels
-        motif_probs_dict: Dictionary mapping motif index to probability
-        n0: Total population size (N0)
-        exclude_zeros: Whether to exclude zero-count motifs
-        p_transform: Transform function for p-values
-    
-    Returns:
-        List of (effect_size, significance) tuples, and list of motif labels
-    """
-    num_motifs = dcounts.shape[0]
-    expected, probs = get_expected_counts_region_specific(labels, motif_probs_dict, n=n0)
-    assert dcounts.shape[0] == expected.shape[0]
-    
-    if exclude_zeros:
-        nonzid = np.nonzero(dcounts)[0]
+list_sig = [i for (i,(e,s)) in enumerate(sigs) if s > pcutoff ]
+color_labels = ['gray' for i in range(len(sigs))]
+for i in list_sig:
+    e,s = sigs[i]
+    if e > 0: #overrepresented
+        color_labels[i] = 'red'
     else:
-        nonzid = np.arange(dcounts.shape[0])
-    
-    num_nonzid_motifs = nonzid.shape[0]
-    dcounts_ = dcounts[nonzid]
-    expected_ = expected[nonzid]
-    probs_ = probs[nonzid]
-    
-    # Effect size is log2(observed/expected)
-    effect_size = np.log2((dcounts_ + 1) / (expected_ + 1))
-    matches = np.zeros(num_nonzid_motifs)
-    assert dcounts_.shape[0] == expected_.shape[0]
-    dcounts_ = dcounts_.astype(int)
-    
-    for i in range(num_nonzid_motifs):
-        pi = max(probs_[i], 1e-10)  # avoid zero or very small probs
-        # Uses binomtest (two-tailed) with n0 (which is N0_value) - matches alternative pipeline
-        # Convert n0 to int as binomtest requires integer n
-        matches[i] = binomtest(int(dcounts_[i]), n=int(n0), p=pi).pvalue
-        matches[i] = max(matches[i], 1e-10)
-    
-    matches = p_transform(matches)
-    res = zip(effect_size, matches)
-    mlabels = [labels[h] for h in nonzid]
-    return list(res), mlabels
+        color_labels[i] = 'blue'
+#color_labels
 
-sigs_rs, slabels_rs = get_motif_sig_pts_region_specific(
-    dcounts, motif_labels, motif_probs_region_specific, n0=n0, exclude_zeros=False
+hide_singlets = True
+if hide_singlets:
+    mask = [i for (i,l) in enumerate(slabels) if len(l) > 1]
+#subset_list(slabels,[1,5,7])
+fig,ax = plt.subplots(1,1)#plt.figure(figsize=(13,11))
+fig.set_size_inches(20,20)
+plt.rc('text', usetex=False)
+plt.rc('font', family='serif')
+ax.set_title(sample_name.replace('_',''),fontsize=16)
+ax.set_xlabel("Effect Size \n$log_2($observed/expected$)$",fontsize=16)
+ax.set_ylabel("Significance\n $-log_{10}(P)$",fontsize=16)
+ax.axhline(y=pcutoff, linestyle='--')
+ax.axvline(x=0, linestyle='--')
+ax.text(x=-.5,y=pcutoff+0.05,s='P-value cutoff',fontsize=16)
+##CHATGPT UPDATES FOR FORMATTING - Not sure these all work
+from adjustText import adjust_text
+
+# Scatter plot
+ax.scatter(*zip(*subset_list(sigs, mask)), c=subset_list(color_labels, mask))
+
+# Prepare text labels
+pretty_slabels = concatenate_list_data(subset_list(slabels, mask))
+coordinates = subset_list(sigs, mask)
+texts = []
+
+for n, (z, y) in enumerate(coordinates):
+    txt = pretty_slabels[n]
+    texts.append(ax.text(z, y, txt, fontsize=12))
+
+# Adjust y-axis limits
+y_vals = [y for _, y in subset_list(sigs, mask)]
+padding = 0.1 * (max(y_vals) - min(y_vals))  # Add 10% padding
+ax.set_ylim(min(y_vals) - padding, max(y_vals) + padding)
+
+# Adjust x-axis limits with padding
+x_vals = [x for x, _ in subset_list(sigs, mask)]
+x_padding = 0.1 * (max(x_vals) - min(x_vals))  # 10% padding
+
+x_min = min(x_vals) - x_padding
+x_max = max(x_vals) + x_padding
+
+# Ensure symmetric padding if range is around 0
+x_abs_max = max(abs(x_min), abs(x_max))
+ax.set_xlim(-x_abs_max, x_abs_max)
+
+#manual x-axis limits for figures
+#ax.set_xlim(-5, 5)
+
+
+# Adjust text positions to avoid overlap
+adjust_text(
+    texts,
+    #only_move={'points': 'y', 'text': 'y'},  # Allow vertical movement
+    expand_points=(1.5, 2.5),  # Add padding around points
+    force_text=1,  # Increase separation force for text
+    force_points=1  # Increase separation force for points
 )
-print(f"✅ [REGION-SPECIFIC MODEL] Statistical tests completed for {len(slabels_rs)} motifs")
 
-# ============================================================================
-# Function to generate effect significance (volcano) plot
-# ============================================================================
-def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, sample_name, alpha_val=alpha):
-    """
-    Generate effect significance (volcano) plot for a given model.
-    
-    Args:
-        sigs_data: List of (effect_size, significance) tuples
-        slabels_data: List of motif labels
-        output_dir: Directory to save plots
-        model_suffix: Suffix for filename (e.g., 'uniform' or 'region_specific')
-        sample_name: Sample name for plot title and filename
-        alpha_val: Significance threshold for Bonferroni correction
-    """
-    from adjustText import adjust_text
-    
-    # Bonferroni correction: p-threshold / Num comparisons
-    pcutoff = -1 * np.log10(alpha_val / len(slabels_data))
-    
-    list_sig = [i for (i, (e, s)) in enumerate(sigs_data) if s > pcutoff]
-    color_labels = ['gray' for i in range(len(sigs_data))]
-    for i in list_sig:
-        e, s = sigs_data[i]
-        if e > 0:  # overrepresented
-            color_labels[i] = 'red'
-        else:
-            color_labels[i] = 'blue'
-    
-    hide_singlets = True
-    if hide_singlets:
-        mask = [i for (i, l) in enumerate(slabels_data) if len(l) > 1]
-    
-    fig, ax = plt.subplots(1, 1)
-    fig.set_size_inches(20, 20)
-    plt.rc('text', usetex=False)
-    plt.rc('font', family='serif')
-    ax.set_title(sample_name.replace('_', ''), fontsize=16)
-    ax.set_xlabel("Effect Size \n$log_2($observed/expected$)$", fontsize=16)
-    ax.set_ylabel("Significance\n $-log_{10}(P)$", fontsize=16)
-    ax.axhline(y=pcutoff, linestyle='--')
-    ax.axvline(x=0, linestyle='--')
-    ax.text(x=-.5, y=pcutoff + 0.05, s='P-value cutoff', fontsize=16)
-    
-    # Scatter plot
-    ax.scatter(*zip(*subset_list(sigs_data, mask)), c=subset_list(color_labels, mask))
-    
-    # Prepare text labels
-    pretty_slabels = concatenate_list_data(subset_list(slabels_data, mask))
-    coordinates = subset_list(sigs_data, mask)
-    texts = []
-    
-    for n, (z, y) in enumerate(coordinates):
-        txt = pretty_slabels[n]
-        texts.append(ax.text(z, y, txt, fontsize=12))
-    
-    # Adjust y-axis limits
-    y_vals = [y for _, y in subset_list(sigs_data, mask)]
-    padding = 0.1 * (max(y_vals) - min(y_vals))  # Add 10% padding
-    ax.set_ylim(min(y_vals) - padding, max(y_vals) + padding)
-    
-    # Adjust x-axis limits with padding
-    x_vals = [x for x, _ in subset_list(sigs_data, mask)]
-    x_padding = 0.1 * (max(x_vals) - min(x_vals))  # 10% padding
-    
-    x_min = min(x_vals) - x_padding
-    x_max = max(x_vals) + x_padding
-    
-    # Ensure symmetric padding if range is around 0
-    x_abs_max = max(abs(x_min), abs(x_max))
-    ax.set_xlim(-x_abs_max, x_abs_max)
-    
-    # Adjust text positions to avoid overlap
-    adjust_text(
-        texts,
-        expand_points=(1.5, 2.5),  # Add padding around points
-        force_text=1,  # Increase separation force for text
-        force_points=1  # Increase separation force for points
-    )
-    
-    # Save plots
-    for ext in ["pdf", "svg", "png"]:
-        fig.savefig(os.path.normpath(os.path.join(output_dir, f"{sample_name}_effect_significance_{model_suffix}.{ext}")))
-    
-    plt.close(fig)
+#fig.savefig(os.path.normpath(os.path.join(plot_dir, sample_name + "_effect_significance.pdf")))
+for ext in ["pdf", "svg", "png"]:
+    fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_effect_significance.{ext}")))
 
-# Generate effect significance plots for both models
-print("\n" + "="*80)
-print("Generating effect significance plots for both models...")
-print("="*80)
-
-# Uniform model plot
-plot_effect_significance(sigs, slabels, uniform_plot_dir, 'uniform', sample_name, alpha)
-print(f"✅ [UNIFORM MODEL] Effect significance plot saved to {uniform_plot_dir}")
-
-# Region-specific model plot
-plot_effect_significance(sigs_rs, slabels_rs, region_specific_plot_dir, 'region_specific', sample_name, alpha)
-print(f"✅ [REGION-SPECIFIC MODEL] Effect significance plot saved to {region_specific_plot_dir}")
 
 #per cell projection strength
 def gen_per_cell_plot(df, cell_ids, motif_labels, dcounts, expected,
@@ -1590,32 +1317,16 @@ def gen_per_cell_plot(df, cell_ids, motif_labels, dcounts, expected,
 
     return ax
 
-# Generate per_cell_proj_strength plots for both models
-print("\n" + "="*80)
-print("Generating per_cell_proj_strength plots for both models...")
-print("="*80)
-
-# Uniform model per_cell_proj_strength plot
-gprcpplot_uniform = gen_per_cell_plot(
+gprcpplot = gen_per_cell_plot(
     df, cell_ids, motif_labels, dcounts, exp_counts,
     figsize=(20, 5 * len([m for m in motif_labels if len(m) > 1])),
-    savepath=os.path.normpath(os.path.join(uniform_plot_dir, sample_name + "_per_cell_proj_strength_uniform")),
+    savepath=os.path.normpath(os.path.join(plot_dir, sample_name + "_per_cell_proj_strength")),
     sample_name=sample_name,
     export_csvs=True,
     csv_dir=csv_output_dir
 )
-print(f"✅ [UNIFORM MODEL] Per-cell projection strength plot saved to {uniform_plot_dir}")
 
-# Region-specific model per_cell_proj_strength plot
-gprcpplot_rs = gen_per_cell_plot(
-    df, cell_ids, motif_labels, dcounts, exp_counts_rs,
-    figsize=(20, 5 * len([m for m in motif_labels if len(m) > 1])),
-    savepath=os.path.normpath(os.path.join(region_specific_plot_dir, sample_name + "_per_cell_proj_strength_region_specific")),
-    sample_name=sample_name,
-    export_csvs=False,  # Don't duplicate CSV exports
-    csv_dir=csv_output_dir
-)
-print(f"✅ [REGION-SPECIFIC MODEL] Per-cell projection strength plot saved to {region_specific_plot_dir}")
+
 
 
 from sklearn.preprocessing import StandardScaler
@@ -2119,21 +1830,7 @@ def prepare_upset_data(df):
 sigsraw, slabelsraw = get_motif_sig_pts(dcounts,motif_labels,exclude_zeros=False, p_transform=lambda x:x)
 
 effectsigsraw = np.array(sigsraw)
-# Convert motif_probs values to float (handles sympy Float objects)
-# motif_probs is a numpy array from get_expected_counts, indexed by motif_labels position
-# slabelsraw contains motif labels (lists of regions), need to find their indices in motif_labels
-expected_sd_raw = []
-for i, motif_label in enumerate(slabelsraw):
-    # Find the index in motif_labels that corresponds to this motif label
-    try:
-        motif_idx = motif_labels.index(motif_label)
-        prob_val = float(motif_probs[motif_idx])
-    except (ValueError, IndexError, TypeError):
-        # Fallback: if index lookup fails, try direct array access (slabelsraw order should match)
-        prob_val = float(motif_probs[i]) if i < len(motif_probs) else 0.0
-    n0_val = float(n0)
-    expected_sd_raw.append(np.sqrt(prob_val * n0_val * (1.0 - prob_val)))
-expected_sd_raw = np.array(expected_sd_raw)
+expected_sd_raw = np.array([np.sqrt(motif_probs[i] * n0 * (1-motif_probs[i])) for i in range(len(slabelsraw))])
 
 degree = [len(x) for x in motif_labels]
 degree[0] = 0
@@ -2161,99 +1858,20 @@ for i in range(len(degree)):
             grp = 2
     group.append(grp)
 
-# ============================================================================
-# UNIFORM MODEL: Upsetplot data preparation
-# ============================================================================
-print("\n" + "="*80)
-print("[UNIFORM MODEL] Preparing upsetplot data...")
-print("="*80)
-
 dfraw = pd.DataFrame(data=[
                            motif_labels,\
                            dcounts,exp_counts.astype(int), \
                           expected_sd_raw,effectsigsraw[:,0], effectsigsraw[:,1], degree, group]).T
 dfraw.columns=['Motifs','Observed','Expected', 'Expected SD','Effect Size', 'P-value', 'Degree', 'Group']
 dfraw.to_csv(
-    os.path.normpath(os.path.join(uniform_plot_dir, f"{sample_name}_upsetplot_uniform.csv")),
+    os.path.normpath(os.path.join(plot_dir, f"{sample_name}_upsetplot.csv")),
     index=False
 )
-print(f"💾 [UNIFORM MODEL] Saved upsetplot data to: {uniform_plot_dir}/{sample_name}_upsetplot_uniform.csv")
 
 dfraw.iloc[40:70]
 
 dfdata = prepare_upset_data(dfraw)
 dfdata = dfdata.sort_values(by=['Group','Observed'], ascending=[True,False])
-
-# ============================================================================
-# REGION-SPECIFIC MODEL: Upsetplot data preparation (Old Pipeline Method)
-# ============================================================================
-print("\n" + "="*80)
-print("[REGION-SPECIFIC MODEL] Preparing upsetplot data...")
-print("="*80)
-
-# Calculate raw significance values for region-specific model
-sigsraw_rs, slabelsraw_rs = get_motif_sig_pts_region_specific(
-    dcounts, motif_labels, motif_probs_region_specific, n0=n0, exclude_zeros=False, p_transform=lambda x: x
-)
-
-effectsigsraw_rs = np.array(sigsraw_rs)
-# Expected SD using region-specific probabilities
-# Convert to float to handle sympy objects
-expected_sd_raw_rs = []
-for i in range(len(slabelsraw_rs)):
-    prob_val = float(motif_probs_rs_array[i])
-    n0_val = float(n0)
-    expected_sd_raw_rs.append(np.sqrt(prob_val * n0_val * (1.0 - prob_val)))
-expected_sd_raw_rs = np.array(expected_sd_raw_rs)
-
-# Degree is the same for both models
-degree_rs = [len(x) for x in motif_labels]
-degree_rs[0] = 0
-
-# Group classification for region-specific model
-group_rs = []
-bonferroni_correction_rs = len(slabels_rs)
-for i in range(len(degree_rs)):
-    """
-    Group 1: motifs significantly over represented
-    Group 2: motifs non-sig over-represented
-    Group 3: motifs non-sig under-represented
-    Group 4: motifs significantly under represented
-    """
-    grp = 0
-    thr = 0.05 / bonferroni_correction_rs
-    if effectsigsraw_rs[i, 0] > 0:  # over-represented
-        if effectsigsraw_rs[i, 1] < thr:  # statistically significant
-            grp = 1
-        else:
-            grp = 3  # 2
-    else:  # under-represented
-        if effectsigsraw_rs[i, 1] > thr:
-            grp = 4
-        else:  # statistically significant
-            grp = 2
-    group_rs.append(grp)
-
-dfraw_rs = pd.DataFrame(data=[
-    motif_labels,
-    dcounts,
-    exp_counts_rs.astype(int),
-    expected_sd_raw_rs,
-    effectsigsraw_rs[:, 0],
-    effectsigsraw_rs[:, 1],
-    degree_rs,
-    group_rs
-]).T
-dfraw_rs.columns = ['Motifs', 'Observed', 'Expected', 'Expected SD', 'Effect Size', 'P-value', 'Degree', 'Group']
-dfraw_rs.to_csv(
-    os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_region_specific.csv")),
-    index=False
-)
-print(f"💾 [REGION-SPECIFIC MODEL] Saved upsetplot data to: {region_specific_plot_dir}/{sample_name}_upsetplot_region_specific.csv")
-
-dfdata_rs = prepare_upset_data(dfraw_rs)
-dfdata_rs = dfdata_rs.sort_values(by=['Group', 'Observed'], ascending=[True, False])
-print(f"✅ [REGION-SPECIFIC MODEL] Upsetplot data prepared for {len(dfdata_rs)} motifs")
 
 
 #upsetplot fxn
@@ -2303,24 +1921,10 @@ def kplot(df, size=(30,12)):
     fig.tight_layout()
     return fig,ax
 
-# Generate upsetplot visual plots for both models
-print("\n" + "="*80)
-print("Generating upsetplot visual plots for both models...")
-print("="*80)
+fig,_ = kplot(dfdata)
 
-# Uniform model upsetplot
-fig_uniform, _ = kplot(dfdata)
 for ext in ["pdf", "svg", "png"]:
-    fig_uniform.savefig(os.path.normpath(os.path.join(uniform_plot_dir, f"{sample_name}_upsetplot_uniform.{ext}")))
-plt.close(fig_uniform)
-print(f"✅ [UNIFORM MODEL] Upsetplot saved to {uniform_plot_dir}")
-
-# Region-specific model upsetplot
-fig_rs, _ = kplot(dfdata_rs)
-for ext in ["pdf", "svg", "png"]:
-    fig_rs.savefig(os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_region_specific.{ext}")))
-plt.close(fig_rs)
-print(f"✅ [REGION-SPECIFIC MODEL] Upsetplot saved to {region_specific_plot_dir}")
+    fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_upsetplot.{ext}")))
 
 ###CHATGPT OPTIMIZED VERSION DOESNT WORK
 def kplot(df, size=(30, 12)):
@@ -2389,16 +1993,10 @@ def kplot(df, size=(30, 12)):
     fig.tight_layout()
     return fig, ax
 
-# Generate GPT-optimized upsetplot visual plots for both models
-fig_uniform_gpt, _ = kplot(dfdata)
-for ext in ["pdf", "svg", "png"]:
-    fig_uniform_gpt.savefig(os.path.normpath(os.path.join(uniform_plot_dir, f"{sample_name}_upsetplot_gpt_uniform.{ext}")))
-plt.close(fig_uniform_gpt)
+fig,_ = kplot(dfdata)
 
-fig_rs_gpt, _ = kplot(dfdata_rs)
 for ext in ["pdf", "svg", "png"]:
-    fig_rs_gpt.savefig(os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_gpt_region_specific.{ext}")))
-plt.close(fig_rs_gpt)
+    fig.savefig(os.path.normpath(os.path.join(plot_dir, f"{sample_name}_upsetplot_gpt.{ext}")))
 
 import networkx as nx
 import numpy as np
@@ -2410,102 +2008,85 @@ import ast
 
 print("\n--- Generating 2-region motif graph from canonical CSV ---")
 
-# Process both models
-for model_type, plot_dir_model in [("uniform", uniform_plot_dir), ("region_specific", region_specific_plot_dir)]:
-    print(f"\n[{model_type.upper()} MODEL] Generating 2-region motif graph...")
-    
-    # === Load canonical motif results CSV ===
-    motif_csv_path = os.path.normpath(os.path.join(plot_dir_model, f"{sample_name}_upsetplot_{model_type}.csv"))
-    
-    if not os.path.exists(motif_csv_path):
-        print(f"⚠️ Warning: Expected motif CSV not found: {motif_csv_path}")
-        print(f"⚠️ Skipping 2-region motif graph generation for {model_type} model")
+# === Load canonical motif results CSV ===
+motif_csv_path = os.path.normpath(os.path.join(analysis_dir, f"{sample_name}_upsetplot.csv"))
+if not os.path.exists(motif_csv_path):
+    raise FileNotFoundError(f"Expected motif CSV not found: {motif_csv_path}")
+
+df_motifs = pd.read_csv(motif_csv_path)
+
+# === Parse 'Motifs' column into real Python lists ===
+if isinstance(df_motifs['Motifs'].iloc[0], str):
+    df_motifs['Motifs'] = df_motifs['Motifs'].apply(ast.literal_eval)
+
+# Drop malformed rows just in case
+df_motifs = df_motifs[df_motifs['Motifs'].apply(lambda x: isinstance(x, list))]
+
+# Filter for 2-region motifs only
+df_motifs['motif_size'] = df_motifs['Motifs'].apply(len)
+df_2region = df_motifs[df_motifs['motif_size'] == 2].copy()
+
+# Ensure numeric values
+for col in ['Observed', 'Expected', 'P-value']:
+    df_2region[col] = pd.to_numeric(df_2region[col], errors='coerce')
+
+# Classify significance label
+def get_sig_label_from_group(row):
+    if row['Group'] == 1:
+        return 'over'
+    elif row['Group'] == 2:
+        return 'under'
+    else:
+        return 'ns'
+df_2region['sig_label'] = df_2region.apply(get_sig_label_from_group, axis=1)
+
+# === Build networkx graph ===
+G = nx.Graph()
+max_obs = df_2region['Observed'].max()
+if pd.isna(max_obs) or max_obs <= 0:
+    max_obs = 1  # prevent division by zero
+
+for row in df_2region.itertuples():
+    regions = row.Motifs
+    if len(regions) != 2:
         continue
-    
-    try:
-        df_motifs = pd.read_csv(motif_csv_path)
+    r1, r2 = regions
+    color = {'over': 'red', 'under': 'blue', 'ns': 'black'}.get(row.sig_label, 'black')
+    width = 1 + 9 * (row.Observed / max_obs)
+    G.add_edge(r1, r2, weight=width, color=color)
 
-        # === Parse 'Motifs' column into real Python lists ===
-        if isinstance(df_motifs['Motifs'].iloc[0], str):
-            df_motifs['Motifs'] = df_motifs['Motifs'].apply(ast.literal_eval)
+# === Layout and draw ===
+manual_region_order = ["RSP", "PM", "AM", "AL", "LM"]
+sorted_nodes = [r for r in manual_region_order if r in G.nodes]
+if not sorted_nodes:
+    print("No valid 2-region motifs found. Skipping plot.")
+else:
+    angle_step = 2 * np.pi / len(sorted_nodes)
+    pos = {
+        region: np.array([np.cos(i * angle_step), np.sin(i * angle_step)])
+        for i, region in enumerate(sorted_nodes)
+    }
 
-        # Drop malformed rows just in case
-        df_motifs = df_motifs[df_motifs['Motifs'].apply(lambda x: isinstance(x, list))]
+    edges = G.edges(data=True)
+    colors = [e[2]['color'] for e in edges]
+    widths = [e[2]['weight'] for e in edges]
 
-        # Filter for 2-region motifs only
-        df_motifs['motif_size'] = df_motifs['Motifs'].apply(len)
-        df_2region = df_motifs[df_motifs['motif_size'] == 2].copy()
+    plt.figure(figsize=(8, 8))
+    nx.draw_networkx(G, pos, with_labels=True, node_size=1000, edge_color=colors, width=widths)
+    plt.title("Fig 10g: 2-Region Broadcasting Motifs (from canonical CSV)")
 
-        # Ensure numeric values
-        for col in ['Observed', 'Expected', 'P-value']:
-            df_2region[col] = pd.to_numeric(df_2region[col], errors='coerce')
+    legend_elements = [
+        Line2D([0], [0], color='red', lw=2, label='Overrepresented'),
+        Line2D([0], [0], color='blue', lw=2, label='Underrepresented'),
+        Line2D([0], [0], color='black', lw=2, label='Not Significant')
+    ]
+    plt.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, -0.1), ncol=2, frameon=False)
+    plt.tight_layout()
 
-        # Classify significance label
-        def get_sig_label_from_group(row):
-            if row['Group'] == 1:
-                return 'over'
-            elif row['Group'] == 2:
-                return 'under'
-            else:
-                return 'ns'
-        df_2region['sig_label'] = df_2region.apply(get_sig_label_from_group, axis=1)
-
-        # === Build networkx graph ===
-        G = nx.Graph()
-        max_obs = df_2region['Observed'].max()
-        if pd.isna(max_obs) or max_obs <= 0:
-            max_obs = 1  # prevent division by zero
-
-        for row in df_2region.itertuples():
-            regions = row.Motifs
-            if len(regions) != 2:
-                continue
-            r1, r2 = regions
-            # Convert to uppercase to match manual_region_order
-            r1_upper = r1.upper()
-            r2_upper = r2.upper()
-            color = {'over': 'red', 'under': 'blue', 'ns': 'black'}.get(row.sig_label, 'black')
-            width = 1 + 9 * (row.Observed / max_obs)
-            G.add_edge(r1_upper, r2_upper, weight=width, color=color)
-
-        # === Layout and draw ===
-        manual_region_order = ["RSP", "PM", "AM", "AL", "LM"]
-        sorted_nodes = [r for r in manual_region_order if r in G.nodes]
-        if not sorted_nodes:
-            print(f"[{model_type.upper()} MODEL] No valid 2-region motifs found. Skipping plot.")
-        else:
-            angle_step = 2 * np.pi / len(sorted_nodes)
-            pos = {
-                region: np.array([np.cos(i * angle_step), np.sin(i * angle_step)])
-                for i, region in enumerate(sorted_nodes)
-            }
-
-            edges = G.edges(data=True)
-            colors = [e[2]['color'] for e in edges]
-            widths = [e[2]['weight'] for e in edges]
-
-            plt.figure(figsize=(8, 8))
-            nx.draw_networkx(G, pos, with_labels=True, node_size=1000, edge_color=colors, width=widths)
-            plt.title(f"Fig 10g: 2-Region Broadcasting Motifs ({model_type.replace('_', ' ').title()} Model)")
-
-            legend_elements = [
-                Line2D([0], [0], color='red', lw=2, label='Overrepresented'),
-                Line2D([0], [0], color='blue', lw=2, label='Underrepresented'),
-                Line2D([0], [0], color='black', lw=2, label='Not Significant')
-            ]
-            plt.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, -0.1), ncol=2, frameon=False)
-            plt.tight_layout()
-
-            save_path = os.path.join(plot_dir_model, f"{sample_name}_panel_g_broadcasting_from_canonical_{model_type}.svg")
-            plt.savefig(save_path, format='svg')
-            plt.close()
-            print(f"✅ [{model_type.upper()} MODEL] Saved 2-region motif plot to {save_path}")
-    
-    except Exception as e:
-        print(f"❌ [{model_type.upper()} MODEL] Error generating 2-region motif graph: {e}")
-        import traceback
-        traceback.print_exc()
-        continue
+    save_path = os.path.join(plot_dir, f"{sample_name}_panel_g_broadcasting_from_canonical.svg")
+    plt.savefig(save_path, format='svg')
+    plt.close()
+    print(f"✅ Saved 2-region motif plot to {save_path}")
 
 
 ### === K-Means Cluster Centroid Heatmap === ###
@@ -2556,34 +2137,19 @@ df.astype(bool).sum()
 def append_summary_wide_format_extended(
     args, projections, umi_total_counts, total_projections, observed_cells,
     N0_value, pe_num, consensus_k, normalized_matrix, output_dir,
-    motif_over, motif_under, mean_inj_value_filtered_cells_only,
-    model_type
+    motif_over, motif_under, mean_inj_value_filtered_cells_only
 ):
     import os
     import pandas as pd
     import numpy as np
     import csv
-    import json
     from scipy.stats import entropy
-
-    # #region agent log
-    with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"process-nbcm-tsv.py:2539","message":"Function entry","data":{"model_type":model_type,"output_dir":str(output_dir),"sample_name":args.sample_name},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-    # #endregion
 
     if not isinstance(normalized_matrix, pd.DataFrame):
         raise ValueError("normalized_matrix must be a pandas DataFrame")
 
     columns = normalized_matrix.columns.tolist()
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
     summary_path = os.path.normpath(os.path.join(output_dir, "projection_summary.csv"))
-    
-    # #region agent log
-    with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"process-nbcm-tsv.py:2556","message":"Directory check","data":{"output_dir":str(output_dir),"dir_exists":os.path.exists(output_dir),"summary_path":str(summary_path)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-    # #endregion
-    
     write_header = not os.path.exists(summary_path)
 
     mean_umis = dict(zip(columns, normalized_matrix.mean(axis=0)))
@@ -2595,7 +2161,6 @@ def append_summary_wide_format_extended(
 
     row = {
         "Sample": args.sample_name,
-        "Model": model_type,
         "injection min": args.injection_umi_min,
         "target:inj ratio": args.min_body_to_target_ratio,
         "at least 1 target minimum": args.min_target_count,
@@ -2629,160 +2194,83 @@ def append_summary_wide_format_extended(
         row[f"MeanUMI_{region}"] = float(mean_umis.get(region, 0.0))
 
     df_row = pd.DataFrame([row])
-    
-    # #region agent log
-    with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"process-nbcm-tsv.py:2600","message":"Before CSV write","data":{"summary_path":str(summary_path),"file_exists_before":os.path.exists(summary_path),"write_header":write_header,"row_count":len(df_row)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-    # #endregion
-    
-    try:
-        df_row.to_csv(summary_path, mode='a', header=write_header, index=False, quoting=csv.QUOTE_ALL)
-        
-        # #region agent log
-        with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"process-nbcm-tsv.py:2601","message":"After CSV write","data":{"summary_path":str(summary_path),"file_exists_after":os.path.exists(summary_path),"file_size":os.path.getsize(summary_path) if os.path.exists(summary_path) else 0},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-        # #endregion
-        
-        print(f"📈 Summary extended metrics appended to {summary_path}")
-        print(f"🧪 MotifOver: {motif_over}")
-        print(f"🧪 MotifUnder: {motif_under}")
-    except Exception as e:
-        # #region agent log
-        with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"process-nbcm-tsv.py:2601","message":"CSV write exception","data":{"summary_path":str(summary_path),"error":str(e),"error_type":type(e).__name__},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-        # #endregion
-        raise
+    df_row.to_csv(summary_path, mode='a', header=write_header, index=False, quoting=csv.QUOTE_ALL)
+    print(f"📈 Summary extended metrics appended to {summary_path}")
+    print(f"🧪 MotifOver: {motif_over}")
+    print(f"🧪 MotifUnder: {motif_under}")
 
 
 # ----------------------
 # SAFE motif extraction using the final upsetplot CSV (trusted final logic)
 # ----------------------
 
-def extract_motifs_from_upsetplot(plot_dir, sample_name, model_type):
-    """
-    Extract overrepresented and underrepresented motifs from model-specific upsetplot CSV.
-    
-    Args:
-        plot_dir: Directory containing the upsetplot CSV file
-        sample_name: Sample name
-        model_type: "uniform" or "region_specific"
-        
-    Returns:
-        tuple: (motif_over, motif_under) - lists of motif names
-    """
-    import os
-    import pandas as pd
-    import numpy as np
-    
-    # Construct filename based on model type
-    if model_type == "uniform":
-        filename = f"{sample_name}_upsetplot_uniform.csv"
-    elif model_type == "region_specific":
-        filename = f"{sample_name}_upsetplot_region_specific.csv"
+import os
+import pandas as pd
+import numpy as np
+
+upset_file = os.path.normpath(
+    os.path.join(out_dir, "analysis", f"{args.sample_name}_upsetplot.csv")
+)
+
+motif_over, motif_under = [], []
+
+try:
+    if os.path.exists(upset_file):
+        print(f"✅ Found motif file: {upset_file}")
+        df_upset = pd.read_csv(upset_file)
+
+        # Sanitize column names
+        df_upset.columns = [col.strip().lower() for col in df_upset.columns]
+
+        # Rename columns to standardized lowercase names
+        df_upset.rename(columns={
+            "motifs": "motif",
+            "p-value": "pval",
+            "observed": "observed",
+            "expected": "expected"
+        }, inplace=True)
+
+        # Validate required columns exist
+        required_cols = {"observed", "expected", "pval", "motif"}
+        if not required_cols.issubset(set(df_upset.columns)):
+            raise ValueError(f"Missing expected columns in upsetplot CSV: {required_cols - set(df_upset.columns)}")
+
+        # Ensure types are correct
+        df_upset["observed"] = pd.to_numeric(df_upset["observed"], errors="coerce")
+        df_upset["expected"] = pd.to_numeric(df_upset["expected"], errors="coerce")
+        df_upset["pval"] = pd.to_numeric(df_upset["pval"], errors="coerce")
+
+        corrected_threshold = 0.05
+
+        motif_over = (
+            df_upset.loc[
+                (df_upset["observed"] > df_upset["expected"]) & (df_upset["pval"] < corrected_threshold),
+                "motif"
+            ]
+            .dropna().astype(str).tolist()
+        )
+
+        motif_under = (
+            df_upset.loc[
+                (df_upset["observed"] < df_upset["expected"]) & (df_upset["pval"] < corrected_threshold),
+                "motif"
+            ]
+            .dropna().astype(str).tolist()
+        )
+
+        print(f"🧪 MotifOver: {motif_over}")
+        print(f"🧪 MotifUnder: {motif_under}")
+
     else:
-        raise ValueError(f"Unknown model_type: {model_type}")
-    
-    upset_file = os.path.normpath(os.path.join(plot_dir, filename))
+        print(f"⚠️ Motif file not found at expected path: {upset_file}")
+
+except Exception as e:
+    print(f"❌ Failed to load upsetplot file {upset_file}: {e}")
     motif_over, motif_under = [], []
-
-    try:
-        if os.path.exists(upset_file):
-            print(f"✅ [{model_type.upper()} MODEL] Found motif file: {upset_file}")
-            df_upset = pd.read_csv(upset_file)
-
-            # Sanitize column names
-            df_upset.columns = [col.strip().lower() for col in df_upset.columns]
-
-            # Rename columns to standardized lowercase names
-            df_upset.rename(columns={
-                "motifs": "motif",
-                "p-value": "pval",
-                "observed": "observed",
-                "expected": "expected"
-            }, inplace=True)
-
-            # Validate required columns exist
-            required_cols = {"observed", "expected", "pval", "motif"}
-            if not required_cols.issubset(set(df_upset.columns)):
-                raise ValueError(f"Missing expected columns in upsetplot CSV: {required_cols - set(df_upset.columns)}")
-
-            # Ensure types are correct
-            df_upset["observed"] = pd.to_numeric(df_upset["observed"], errors="coerce")
-            df_upset["expected"] = pd.to_numeric(df_upset["expected"], errors="coerce")
-            df_upset["pval"] = pd.to_numeric(df_upset["pval"], errors="coerce")
-
-            corrected_threshold = 0.05
-
-            motif_over = (
-                df_upset.loc[
-                    (df_upset["observed"] > df_upset["expected"]) & (df_upset["pval"] < corrected_threshold),
-                    "motif"
-                ]
-                .dropna().astype(str).tolist()
-            )
-
-            motif_under = (
-                df_upset.loc[
-                    (df_upset["observed"] < df_upset["expected"]) & (df_upset["pval"] < corrected_threshold),
-                    "motif"
-                ]
-                .dropna().astype(str).tolist()
-            )
-
-            print(f"🧪 [{model_type.upper()} MODEL] MotifOver: {motif_over}")
-            print(f"🧪 [{model_type.upper()} MODEL] MotifUnder: {motif_under}")
-
-        else:
-            print(f"⚠️ [{model_type.upper()} MODEL] Motif file not found at expected path: {upset_file}")
-
-    except Exception as e:
-        print(f"❌ [{model_type.upper()} MODEL] Failed to load upsetplot file {upset_file}: {e}")
-        motif_over, motif_under = [], []
-    
-    return motif_over, motif_under
-
-# Extract motifs for both models
-# #region agent log
-import json as _debug_json
-with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-    f.write(_debug_json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"process-nbcm-tsv.py:2694","message":"Before motif extraction","data":{"uniform_plot_dir":str(uniform_plot_dir) if 'uniform_plot_dir' in globals() else "UNDEFINED","region_specific_plot_dir":str(region_specific_plot_dir) if 'region_specific_plot_dir' in globals() else "UNDEFINED","sample_name":args.sample_name},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-# #endregion
-
-motif_over_uniform, motif_under_uniform = extract_motifs_from_upsetplot(
-    uniform_plot_dir, args.sample_name, "uniform"
-)
-
-motif_over_rs, motif_under_rs = extract_motifs_from_upsetplot(
-    region_specific_plot_dir, args.sample_name, "region_specific"
-)
-
-# #region agent log
-with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-    f.write(_debug_json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"process-nbcm-tsv.py:2701","message":"After motif extraction","data":{"motif_over_uniform_count":len(motif_over_uniform),"motif_over_rs_count":len(motif_over_rs)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-# #endregion
 
 # ----------------------
 # Call summary writer
 # ----------------------
-# ============================================================================
-# Final Summary: Both Models Comparison
-# ============================================================================
-print("\n" + "="*80)
-print("FINAL SUMMARY: UNIFORM vs REGION-SPECIFIC MODELS")
-print("="*80)
-print(f"✅ [UNIFORM MODEL] pₑ = {pe_num:.6f}")
-print(f"✅ [REGION-SPECIFIC MODEL] Region probabilities: {psdict_region_specific}")
-print(f"✅ Both models calculated expected counts and performed statistical tests")
-print(f"✅ Results saved with '_uniform' and '_region_specific' suffixes")
-print("="*80)
-
-# #region agent log
-import json as _debug_json2
-with open('/Users/matt/git/mapseq_processing_Jacobs/.cursor/debug.log', 'a') as f:
-    f.write(_debug_json2.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"process-nbcm-tsv.py:2717","message":"Before function calls","data":{"uniform_plot_dir":str(uniform_plot_dir),"region_specific_plot_dir":str(region_specific_plot_dir),"pe_num":float(pe_num) if isinstance(pe_num, (int, float)) else str(pe_num)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-# #endregion
-
-# Call for uniform model
 append_summary_wide_format_extended(
     args,
     projections,
@@ -2793,29 +2281,8 @@ append_summary_wide_format_extended(
     pe_num,
     consensus_k,
     normalized_matrix,
-    uniform_plot_dir,
-    motif_over_uniform,
-    motif_under_uniform,
-    mean_inj_value_filtered_cells_only,
-    "uniform"
-)
-
-# Call for region-specific model
-# Convert psdict_region_specific to string representation for p_e field
-pe_rs_str = ",".join([f"{k}:{v:.6f}" for k, v in psdict_region_specific.items()])
-append_summary_wide_format_extended(
-    args,
-    projections,
-    umi_total_counts,
-    total_projections,
-    observed_cells,
-    N0_value,
-    pe_rs_str,
-    consensus_k,
-    normalized_matrix,
-    region_specific_plot_dir,
-    motif_over_rs,
-    motif_under_rs,
-    mean_inj_value_filtered_cells_only,
-    "region_specific"
+    out_dir,
+    motif_over,
+    motif_under,
+    mean_inj_value_filtered_cells_only
 )

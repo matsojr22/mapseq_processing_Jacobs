@@ -18,20 +18,52 @@ def motif_label(motif_str):
     except:
         return "<parse_error>"
 
-def load_and_process_files(input_dir, output_dir):
+def load_and_process_files(input_dir, output_dir, model_type=None):
+    """
+    Load and process upsetplot files, optionally filtering by model type.
+    
+    Args:
+        input_dir: Directory containing upsetplot CSV files
+        output_dir: Directory to save combined output
+        model_type: 'uniform', 'region_specific', or None (process all)
+    
+    Returns:
+        Combined DataFrame with all processed data
+    """
     all_data = []
     for fname in sorted(os.listdir(input_dir)):
-        if fname.endswith("upsetplot.csv"):
-            stage = fname.split("_")[0].upper()
-            fpath = os.path.join(input_dir, fname)
-            df = pd.read_csv(fpath)
-            df["Motif_Label"] = df["Motifs"].apply(motif_label)
-            df["Stage"] = stage
-            df["Significant"] = df["P-value"].apply(lambda p: float(p) <= 0.05)
-            df["Observed"] = df["Observed"].astype(int)
-            all_data.append(df[["Motif_Label", "Effect Size", "Stage", "Significant", "Observed"]])
+        # Detect model type from filename
+        is_uniform = fname.endswith("upsetplot_uniform.csv")
+        is_region_specific = fname.endswith("upsetplot_region_specific.csv")
+        is_backward_compat = fname.endswith("upsetplot.csv") and not is_uniform and not is_region_specific
+        
+        # Filter by model type if specified
+        if model_type:
+            if model_type == 'uniform' and not is_uniform:
+                continue
+            elif model_type == 'region_specific' and not is_region_specific:
+                continue
+        elif is_backward_compat:
+            # If no model_type specified, skip backward compat files if model-specific files exist
+            # (prefer model-specific files)
+            continue
+        
+        # Extract stage from filename (first part before underscore)
+        stage = fname.split("_")[0].upper()
+        fpath = os.path.join(input_dir, fname)
+        df = pd.read_csv(fpath)
+        df["Motif_Label"] = df["Motifs"].apply(motif_label)
+        df["Stage"] = stage
+        df["Significant"] = df["P-value"].apply(lambda p: float(p) <= 0.05)
+        df["Observed"] = df["Observed"].astype(int)
+        all_data.append(df[["Motif_Label", "Effect Size", "Stage", "Significant", "Observed"]])
+    
+    if not all_data:
+        return pd.DataFrame()
+    
     combined_df = pd.concat(all_data)
-    combined_df.to_csv(os.path.join(output_dir, "combined_effect_sizes.csv"), index=False)
+    output_filename = f"combined_effect_sizes_{model_type}.csv" if model_type else "combined_effect_sizes.csv"
+    combined_df.to_csv(os.path.join(output_dir, output_filename), index=False)
     return combined_df
 
 def compute_transition_significance(df, stage_order, output_dir):
@@ -149,13 +181,41 @@ if __name__ == "__main__":
     from pathlib import Path
     parser = argparse.ArgumentParser(description="Plot motif effect size trajectories across stages.")
     parser.add_argument("--input_dir", type=str, required=True, help="Directory containing *_upsetplot.csv files")
+    parser.add_argument("--helper_output_dir", type=str, default=None,
+                       help="Directory for helper script outputs (default: helpers/outputs/07_motif_significange_trajectories)")
     args = parser.parse_args()
 
     # Set output directory
     script_dir = Path(__file__).parent
-    output_dir = script_dir.parent / "outputs" / "07_motif_significange_trajectories"
-    os.makedirs(output_dir, exist_ok=True)
+    if args.helper_output_dir:
+        base_output_dir = Path(args.helper_output_dir)
+    else:
+        base_output_dir = script_dir.parent / "outputs" / "07_motif_significange_trajectories"
+    os.makedirs(base_output_dir, exist_ok=True)
 
     stage_order = ["P3", "P12", "P20", "P60"]
-    df_all = load_and_process_files(args.input_dir, str(output_dir))
-    plot_motif_trajectories(df_all, stage_order, str(output_dir))
+    
+    # Process both models separately
+    models_to_process = ['uniform', 'region_specific']
+    
+    for model_type in models_to_process:
+        print("\n" + "="*80)
+        print(f"Processing {model_type.upper()} MODEL")
+        print("="*80)
+        
+        # Create model-specific output directory
+        model_output_dir = base_output_dir / model_type
+        os.makedirs(model_output_dir, exist_ok=True)
+        
+        df_all = load_and_process_files(args.input_dir, str(model_output_dir), model_type=model_type)
+        
+        if df_all.empty:
+            print(f"Warning: No data found for {model_type} model")
+            continue
+        
+        plot_motif_trajectories(df_all, stage_order, str(model_output_dir))
+        print(f"✅ Completed processing for {model_type} model")
+    
+    print(f"\n📁 All results saved to: {base_output_dir}")
+    print("   - Uniform model: {}/uniform/".format(base_output_dir))
+    print("   - Region-specific model: {}/region_specific/".format(base_output_dir))

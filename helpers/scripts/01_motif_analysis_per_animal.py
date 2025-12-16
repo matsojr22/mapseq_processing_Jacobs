@@ -1,8 +1,9 @@
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend to prevent opening windows
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import chi2_contingency, kruskal
@@ -161,20 +162,36 @@ def set_base_directory(new_base_dir):
     print(f"Base directory set to: {BASE_DIR}")
 
 
-def load_per_animal_data(base_dir):
+def load_per_animal_data(base_dir, parameterization_filter=None, model_type=None):
     """
     Load per-animal motif data from directory structure, preserving individual animal measurements.
 
-    Expected structure:
-    base_dir/
-    ├── p12/
-    │   ├── animal1_motif_observed_summary.csv
-    │   ├── animal2_motif_observed_summary.csv
-    │   └── ...
-    ├── p20/
-    │   └── ...
-    └── p60/
-        └── ...
+    Supports two directory structures:
+    1. Old structure (multiple ages):
+       base_dir/
+       ├── p12/
+       │   └── analysis/
+       │       ├── uniform/
+       │       │   └── *upsetplot_uniform.csv
+       │       └── region_specific/
+       │           └── *upsetplot_region_specific.csv
+       ├── p20/
+       │   └── analysis/
+       └── p60/
+           └── analysis/
+    
+    2. New structure (single parameterization):
+       base_dir/
+       └── analysis/
+           ├── uniform/
+           │   └── *upsetplot_uniform.csv
+           └── region_specific/
+               └── *upsetplot_region_specific.csv
+
+    Args:
+        base_dir: Base directory containing age subdirectories
+        parameterization_filter: Optional parameterization name to filter by (e.g., "01.minimal_filter_parameters_i1_r1_t1_u2")
+        model_type: Model type to load ('uniform', 'region_specific', or None for backward compatibility)
 
     Returns:
         dict: {timepoint: dataframe with individual animal data}
@@ -184,56 +201,85 @@ def load_per_animal_data(base_dir):
 
     datasets = {}
 
-    # Look for timepoint directories (p12, p20, p60)
-    timepoint_dirs = [
-        d
-        for d in os.listdir(base_dir)
-        if os.path.isdir(os.path.join(base_dir, d)) and d.lower().startswith("p")
-    ]
-
-    if not timepoint_dirs:
-        raise ValueError(
-            f"No timepoint directories (p12, p20, p60) found in {base_dir}"
-        )
-
-    for timepoint_dir in sorted(timepoint_dirs):
-        timepoint_path = os.path.join(base_dir, timepoint_dir)
-        timepoint_name = timepoint_dir.upper()  # Convert to P12, P20, P60
-
-        print(f"Loading data for {timepoint_name}...")
-
-        # Look for CSV files in subdirectories (e.g., 05.HAN_filter_parameters_*/analysis/)
-        # First try analysis subdirectories, then the main timepoint directory
+    # Check if this is a parameterization directory (has analysis/ subdirectory)
+    analysis_dir = os.path.join(base_dir, "analysis")
+    if os.path.isdir(analysis_dir):
+        # New structure: single parameterization directory
+        # Extract age from parent directory path
+        base_path = Path(base_dir)
+        age_from_path = None
+        
+        # Try to find age in path (e.g., 02_output/p3/... -> p3)
+        for part in base_path.parts:
+            if part.lower().startswith('p') and len(part) <= 4 and part[1:].isdigit():
+                age_from_path = part.lower()
+                break
+        
+        if not age_from_path:
+            # Try to extract from directory name or file names
+            # Check both model subdirectories and main directory for backward compatibility
+            search_patterns = []
+            if model_type:
+                search_patterns.append(os.path.join(analysis_dir, model_type, f"*upsetplot_{model_type}.csv"))
+            else:
+                # Backward compatibility: check main directory and both model subdirectories
+                search_patterns.append(os.path.join(analysis_dir, "*upsetplot.csv"))
+                search_patterns.append(os.path.join(analysis_dir, "uniform", "*upsetplot_uniform.csv"))
+                search_patterns.append(os.path.join(analysis_dir, "region_specific", "*upsetplot_region_specific.csv"))
+            
+            csv_files = []
+            for pattern in search_patterns:
+                csv_files.extend(glob.glob(pattern))
+            
+            if csv_files:
+                # Try to extract age from first filename
+                first_file = os.path.basename(csv_files[0])
+                if first_file.lower().startswith('p'):
+                    age_from_path = first_file.split('_')[0].lower()
+        
+        if not age_from_path:
+            # Default to directory name if we can't determine
+            age_from_path = base_path.name.split('_')[0].lower() if '_' in base_path.name else 'unknown'
+        
+        timepoint_name = age_from_path.upper()  # Convert to P3, P12, P20, P60
+        model_suffix = f" ({model_type})" if model_type else ""
+        print(f"Loading data for {timepoint_name}{model_suffix} from parameterization directory...")
+        
+        # Look for upsetplot files in analysis directory
+        # Support both new dual-model structure and backward compatibility
         csv_files = []
+        if model_type:
+            # New structure: search in model-specific subdirectory
+            csv_files = glob.glob(os.path.join(analysis_dir, model_type, f"*upsetplot_{model_type}.csv"))
+        else:
+            # Backward compatibility: check main directory first, then model subdirectories
+            csv_files = glob.glob(os.path.join(analysis_dir, "*upsetplot.csv"))
+            if not csv_files:
+                # Fall back to model subdirectories
+                csv_files.extend(glob.glob(os.path.join(analysis_dir, "uniform", "*upsetplot_uniform.csv")))
+                csv_files.extend(glob.glob(os.path.join(analysis_dir, "region_specific", "*upsetplot_region_specific.csv")))
         
-        # Check for analysis subdirectories with upsetplot files
-        for subdir in os.listdir(timepoint_path):
-            subdir_path = os.path.join(timepoint_path, subdir)
-            if os.path.isdir(subdir_path):
-                analysis_path = os.path.join(subdir_path, "analysis")
-                if os.path.isdir(analysis_path):
-                    csv_files.extend(glob.glob(os.path.join(analysis_path, "*upsetplot.csv")))
+        # Filter out aggregate files (containing "ALL") if individual animal files exist
+        individual_files = [f for f in csv_files if "_ALL_" not in os.path.basename(f)]
+        if individual_files:
+            csv_files = individual_files
+        # Otherwise use all files including aggregate
         
-        # Also check the main timepoint directory
-        csv_files.extend(glob.glob(os.path.join(timepoint_path, "*.csv")))
-        
-        # Remove duplicates
-        csv_files = list(set(csv_files))
-
+        # Validate that we found CSV files
         if not csv_files:
-            print(f"  Warning: No CSV files found in {timepoint_path}")
-            continue
-
+            print(f"  Warning: No CSV files found in {analysis_dir}")
+            return datasets
+        
         print(f"  Found {len(csv_files)} files")
-
+        
         # Load data from all animals for this timepoint (keeping individual animal data)
         all_animal_data = []
-
+        
         for csv_file in csv_files:
             animal_id = os.path.basename(csv_file).split("_")[0]  # Extract animal ID
             try:
                 df = pd.read_csv(csv_file)
-
+                
                 # Check if this is an upsetplot.csv file (has Motifs, Observed columns)
                 if "Motifs" in df.columns and "Observed" in df.columns:
                     # Convert upsetplot format to expected format
@@ -258,7 +304,7 @@ def load_per_animal_data(base_dir):
                         f"    Warning: {animal_id} has unexpected column format. Expected 'Motifs'/'Observed' or 'motif label'/'observed'"
                     )
                     continue
-
+                
                 # Validate required columns
                 required_columns = ["motif label", "motif size", "observed"]
                 missing_columns = [
@@ -269,7 +315,7 @@ def load_per_animal_data(base_dir):
                         f"    Warning: {animal_id} missing columns: {missing_columns}"
                     )
                     continue
-
+                
                 # Calculate normalized frequency for this animal
                 total_observations = df["observed"].sum()
                 if total_observations > 0:
@@ -278,29 +324,166 @@ def load_per_animal_data(base_dir):
                     df["normalized_freq"] = 0.0
                 df["Animal_ID"] = animal_id  # Add animal identifier
                 df["Timepoint"] = timepoint_name  # Add timepoint identifier
-
+                
                 all_animal_data.append(df)
                 print(
-                    f"    Loaded {animal_id}: {len(df)} motifs, {df['observed'].sum()} observations"
+                    f"    Loaded {animal_id}: {len(df)} motifs, {df['observed'].sum():.0f} observations"
                 )
             except Exception as e:
                 print(f"    Error loading {csv_file}: {e}")
                 import traceback
                 traceback.print_exc()
-
+        
+        # Combine all animal data for this timepoint (preserving individual measurements)
         if not all_animal_data:
             print(f"  Warning: No valid data loaded for {timepoint_name}")
-            continue
-
-        # Combine all animal data for this timepoint (preserving individual measurements)
+            return datasets
+        
         combined_df = pd.concat(all_animal_data, ignore_index=True)
-
         datasets[timepoint_name] = combined_df
         print(
             f"  Combined data from {len(csv_files)} animals with {len(combined_df)} total motif observations"
         )
+        
+        # Return datasets for NEW structure
+        return datasets
+        
+    else:
+        # Old structure: look for timepoint directories (p3, p12, p20, p60)
+        # When base_dir is 02_output, we need to search through all age directories
+        # and find parameterization subdirectories within each
+        timepoint_dirs = [
+            d
+            for d in os.listdir(base_dir)
+            if os.path.isdir(os.path.join(base_dir, d)) and d.lower().startswith("p") and len(d) <= 4
+        ]
 
-    return datasets
+        if not timepoint_dirs:
+            raise ValueError(
+                f"No timepoint directories (p3, p12, p20, p60) found in {base_dir}, "
+                f"and no analysis/ subdirectory found. Expected either:\n"
+                f"  - Multiple age directories (p3/, p12/, p20/, p60/) OR\n"
+                f"  - Single parameterization directory with analysis/ subdirectory"
+            )
+
+        # Process ALL timepoints for cross-age analysis
+        timepoint_dirs_to_process = sorted(timepoint_dirs)
+        
+        # Group CSV files by timepoint and process each separately
+        for timepoint_dir in timepoint_dirs_to_process:
+            timepoint_path = os.path.join(base_dir, timepoint_dir)
+            timepoint_name = timepoint_dir.upper()  # Convert to P3, P12, P20, P60
+
+            print(f"Loading data for {timepoint_name}...")
+
+            # Look for CSV files in parameterization subdirectories
+            # Structure: 02_output/p3/01.minimal_filter_parameters_*/analysis/*upsetplot.csv
+            timepoint_csvs = []
+            
+            # Check for parameterization subdirectories with analysis/ subdirectories
+            if os.path.isdir(timepoint_path):
+                for subdir in os.listdir(timepoint_path):
+                    subdir_path = os.path.join(timepoint_path, subdir)
+                    if os.path.isdir(subdir_path):
+                        # Check if this is a parameterization directory (starts with 01., 02., etc.)
+                        if subdir.startswith(('01.', '02.', '03.', '04.', '05.')):
+                            # Filter by parameterization if specified
+                            if parameterization_filter and subdir != parameterization_filter:
+                                continue
+                            analysis_path = os.path.join(subdir_path, "analysis")
+                            if os.path.isdir(analysis_path):
+                                if model_type:
+                                    # New structure: search in model-specific subdirectory
+                                    timepoint_csvs.extend(glob.glob(os.path.join(analysis_path, model_type, f"*upsetplot_{model_type}.csv")))
+                                else:
+                                    # Backward compatibility: check main directory first, then model subdirectories
+                                    timepoint_csvs.extend(glob.glob(os.path.join(analysis_path, "*upsetplot.csv")))
+                                    if not timepoint_csvs:
+                                        timepoint_csvs.extend(glob.glob(os.path.join(analysis_path, "uniform", "*upsetplot_uniform.csv")))
+                                        timepoint_csvs.extend(glob.glob(os.path.join(analysis_path, "region_specific", "*upsetplot_region_specific.csv")))
+            
+            # Process this timepoint's files
+            if timepoint_csvs:
+                # Filter out aggregate files (containing "ALL") if individual animal files exist
+                individual_files = [f for f in timepoint_csvs if "_ALL_" not in os.path.basename(f).upper()]
+                if individual_files:
+                    timepoint_csvs = individual_files
+                
+                # Load data for this timepoint
+                all_animal_data = []
+                
+                for csv_file in timepoint_csvs:
+                    animal_id = os.path.basename(csv_file).split("_")[0]  # Extract animal ID
+                    try:
+                        df = pd.read_csv(csv_file)
+
+                        # Check if this is an upsetplot.csv file (has Motifs, Observed columns)
+                        if "Motifs" in df.columns and "Observed" in df.columns:
+                            # Convert upsetplot format to expected format
+                            import ast
+                            df["motif label"] = df["Motifs"].apply(
+                                lambda x: ast.literal_eval(x) if isinstance(x, str) else x
+                            ).apply(lambda x: "+".join(sorted(x)) if isinstance(x, list) and x and x[0] else "")
+                            df["motif size"] = df.get("Degree", df["Motifs"].apply(
+                                lambda x: len(ast.literal_eval(x)) if isinstance(x, str) else (len(x) if isinstance(x, list) else 0)
+                            ))
+                            df["observed"] = df["Observed"].astype(float)
+                        # Check if this is the expected format
+                        elif "motif label" in df.columns and "observed" in df.columns:
+                            # Already in expected format
+                            if "motif size" not in df.columns:
+                                # Calculate motif size if not present
+                                df["motif size"] = df["motif label"].apply(
+                                    lambda x: len(str(x).split("+")) if "+" in str(x) else (1 if str(x) else 0)
+                                )
+                        else:
+                            print(
+                                f"    Warning: {animal_id} has unexpected column format. Expected 'Motifs'/'Observed' or 'motif label'/'observed'"
+                            )
+                            continue
+
+                        # Validate required columns
+                        required_columns = ["motif label", "motif size", "observed"]
+                        missing_columns = [
+                            col for col in required_columns if col not in df.columns
+                        ]
+                        if missing_columns:
+                            print(
+                                f"    Warning: {animal_id} missing columns: {missing_columns}"
+                            )
+                            continue
+
+                        # Calculate normalized frequency for this animal
+                        total_observations = df["observed"].sum()
+                        if total_observations > 0:
+                            df["normalized_freq"] = df["observed"] / total_observations
+                        else:
+                            df["normalized_freq"] = 0.0
+                        df["Animal_ID"] = animal_id  # Add animal identifier
+                        df["Timepoint"] = timepoint_name  # Add timepoint identifier
+
+                        all_animal_data.append(df)
+                        print(
+                            f"    Loaded {animal_id}: {len(df)} motifs, {df['observed'].sum():.0f} observations"
+                        )
+                    except Exception as e:
+                        print(f"    Error loading {csv_file}: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                # Combine all animal data for this timepoint
+                if all_animal_data:
+                    combined_df = pd.concat(all_animal_data, ignore_index=True)
+                    datasets[timepoint_name] = combined_df
+                    print(
+                        f"  Combined data from {len(timepoint_csvs)} animals with {len(combined_df)} total motif observations"
+                    )
+        
+        # Check if we loaded any data
+        if not datasets:
+            raise ValueError(f"No valid data loaded from {base_dir}")
+        
+        return datasets
 
 
 def clean_motif_label(label):
@@ -391,24 +574,34 @@ def add_bracket_annotation(fig, ax, x_start, x_end, text):
 
 
 def calculate_distribution_jsd(freq_arrays):
-    """Calculate JSD between three frequency distributions"""
+    """Calculate JSD between frequency distributions (handles 1-3 timepoints)"""
     # Add small epsilon to avoid log(0) and normalize
     epsilon = 1e-10
-
-    freq1 = np.array(freq_arrays[0]) + epsilon
-    freq2 = np.array(freq_arrays[1]) + epsilon
-    freq3 = np.array(freq_arrays[2]) + epsilon
-
-    freq1 = freq1 / freq1.sum()
-    freq2 = freq2 / freq2.sum()
-    freq3 = freq3 / freq3.sum()
-
-    # Calculate pairwise JSDs
-    jsd_12 = jensenshannon(freq1, freq2)
-    jsd_13 = jensenshannon(freq1, freq3)
-    jsd_23 = jensenshannon(freq2, freq3)
-
-    return jsd_12, jsd_13, jsd_23
+    
+    n_timepoints = len(freq_arrays)
+    
+    if n_timepoints < 2:
+        # Not enough timepoints for comparison
+        return np.nan, np.nan, np.nan
+    
+    # Normalize each frequency array
+    normalized_freqs = []
+    for freq_array in freq_arrays:
+        freq = np.array(freq_array) + epsilon
+        freq = freq / freq.sum()
+        normalized_freqs.append(freq)
+    
+    # Calculate pairwise JSDs based on available timepoints
+    if n_timepoints == 2:
+        jsd_12 = jensenshannon(normalized_freqs[0], normalized_freqs[1])
+        return jsd_12, np.nan, np.nan
+    elif n_timepoints >= 3:
+        jsd_12 = jensenshannon(normalized_freqs[0], normalized_freqs[1])
+        jsd_13 = jensenshannon(normalized_freqs[0], normalized_freqs[2])
+        jsd_23 = jensenshannon(normalized_freqs[1], normalized_freqs[2])
+        return jsd_12, jsd_13, jsd_23
+    
+    return np.nan, np.nan, np.nan
 
 
 def calculate_summary_stats(datasets, all_motifs, normalization_type="global"):
@@ -730,60 +923,104 @@ parser = argparse.ArgumentParser(description="Analyze motif data per animal")
 parser.add_argument('--output_mode', default='cross_age', 
                    choices=['cross_age', 'per_age', 'both'],
                    help='Output mode: cross_age (default), per_age, or both')
+parser.add_argument('--base_output_dir', type=str, default=None,
+                   help='Base output directory for processing results (default: REPO_ROOT/02_output). Helper outputs will be saved in a subdirectory matching the parameterization.')
+parser.add_argument('--helper_output_dir', type=str, default=None,
+                   help='Directory for helper script outputs (default: helpers/outputs/01_motif_analysis_per_animal)')
 args = parser.parse_args()
 output_mode = args.output_mode
 
-# Read and process data
-print("Loading and aggregating per-animal data...")
-datasets = load_per_animal_data(BASE_DIR)
+# Update BASE_DIR and RESULTS_DIR if arguments provided
+if args.base_output_dir:
+    set_base_directory(args.base_output_dir)
+if args.helper_output_dir:
+    RESULTS_DIR = args.helper_output_dir
+    ensure_results_directory()
 
-if not datasets:
-    raise ValueError(f"No valid datasets found in {BASE_DIR}")
+# Extract parameterization name from helper_output_dir if provided
+parameterization_filter = None
+if args.helper_output_dir:
+    helper_path = Path(args.helper_output_dir)
+    # Look for parameterization name in path (e.g., .../01.minimal_filter_parameters_..._helpers/...)
+    for part in helper_path.parts:
+        if part.startswith(('01.', '02.', '03.', '04.', '05.')) and '_helpers' in part:
+            # Extract just the parameterization name (before _helpers)
+            parameterization_filter = part.split('_helpers')[0]
+            print(f"Filtering by parameterization: {parameterization_filter}")
+            break
+        elif part.startswith(('01.', '02.', '03.', '04.', '05.')):
+            parameterization_filter = part
+            print(f"Filtering by parameterization: {parameterization_filter}")
+            break
 
-print(f"\nSuccessfully loaded {len(datasets)} timepoints: {list(datasets.keys())}")
+# Process both models separately
+models_to_process = ['uniform', 'region_specific']
 
-# Ensure results directory exists
-ensure_results_directory()
+for model_type in models_to_process:
+    print("\n" + "="*80)
+    print(f"Processing {model_type.upper()} MODEL")
+    print("="*80)
+    
+    # Read and process data for this model
+    print(f"Loading and aggregating per-animal data for {model_type} model...")
+    datasets = load_per_animal_data(BASE_DIR, parameterization_filter=parameterization_filter, model_type=model_type)
+    
+    if not datasets:
+        print(f"Warning: No valid datasets found for {model_type} model in {BASE_DIR}")
+        continue
+    
+    print(f"\nSuccessfully loaded {len(datasets)} timepoints for {model_type} model: {list(datasets.keys())}")
+    
+    # Ensure results directory exists
+    ensure_results_directory()
+    
+    # Create model-specific output directory
+    model_results_dir = os.path.join(RESULTS_DIR, model_type)
+    os.makedirs(model_results_dir, exist_ok=True)
+    
+    # Create cross_age subdirectory if needed
+    cross_age_dir = os.path.join(model_results_dir, "cross_age")
+    if output_mode in ['cross_age', 'both']:
+        os.makedirs(cross_age_dir, exist_ok=True)
+    
+    # Store original RESULTS_DIR to restore later
+    original_results_dir = RESULTS_DIR
+    RESULTS_DIR = model_results_dir
 
-# Create cross_age subdirectory if needed
-cross_age_dir = os.path.join(RESULTS_DIR, "cross_age")
-if output_mode in ['cross_age', 'both']:
-    os.makedirs(cross_age_dir, exist_ok=True)
+    # Process datasets - clean motif labels and collect all motifs in original order
+    # Get motifs in the order they appear in the first dataset
+    first_dataset = list(datasets.values())[0]
+    all_motifs_original_order = []
+    seen_motifs = set()
 
-# Process datasets - clean motif labels and collect all motifs in original order
-# Get motifs in the order they appear in the first dataset
-first_dataset = list(datasets.values())[0]
-all_motifs_original_order = []
-seen_motifs = set()
+    for _, row in first_dataset.iterrows():
+        clean_motif = clean_motif_label(row["motif label"])
+        if clean_motif not in seen_motifs:
+            all_motifs_original_order.append(clean_motif)
+            seen_motifs.add(clean_motif)
 
-for _, row in first_dataset.iterrows():
-    clean_motif = clean_motif_label(row["motif label"])
-    if clean_motif not in seen_motifs:
-        all_motifs_original_order.append(clean_motif)
-        seen_motifs.add(clean_motif)
+    # Add any motifs from other datasets that weren't in the first dataset
+    for name, df in datasets.items():
+        df["motif label_Clean"] = df["motif label"].apply(clean_motif_label)
+        for motif in df["motif label_Clean"].unique():
+            if motif not in seen_motifs:
+                all_motifs_original_order.append(motif)
+                seen_motifs.add(motif)
 
-# Add any motifs from other datasets that weren't in the first dataset
-for name, df in datasets.items():
-    df["motif label_Clean"] = df["motif label"].apply(clean_motif_label)
-    for motif in df["motif label_Clean"].unique():
-        if motif not in seen_motifs:
-            all_motifs_original_order.append(motif)
-            seen_motifs.add(motif)
+    all_motifs = all_motifs_original_order  # Use original order instead of sorted
 
-all_motifs = all_motifs_original_order  # Use original order instead of sorted
+    for name, df in datasets.items():
+        print(
+            f"{name}: {df['Animal_ID'].nunique()} animals, {len(df['motif label_Clean'].unique())} unique motifs"
+        )
 
-for name, df in datasets.items():
-    print(
-        f"{name}: {df['Animal_ID'].nunique()} animals, {len(df['motif label_Clean'].unique())} unique motifs"
-    )
+    print(f"\nTotal unique motifs across all timepoints ({model_type} model): {len(all_motifs)}")
 
-print(f"\nTotal unique motifs across all timepoints: {len(all_motifs)}")
-
-# Existing cross-age plot generation (preserved)
-if output_mode in ['cross_age', 'both']:
-    # Calculate summary statistics for global normalization
-    print("\nCalculating summary statistics...")
-    global_summary_stats = calculate_summary_stats(datasets, all_motifs, "global")
+    # Existing cross-age plot generation (preserved)
+    if output_mode in ['cross_age', 'both']:
+        # Calculate summary statistics for global normalization
+        print("\nCalculating summary statistics...")
+        global_summary_stats = calculate_summary_stats(datasets, all_motifs, "global")
 
     # Perform Kruskal-Wallis tests for global normalization
     print("Performing Kruskal-Wallis tests for global normalization...")
@@ -801,7 +1038,10 @@ if output_mode in ['cross_age', 'both']:
     width = 0.25
 
     datasets_list = list(datasets.keys())
-    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]
+    # Use a color palette that can handle any number of datasets
+    import matplotlib.cm as cm
+    color_map = cm.get_cmap('tab10')
+    colors = [color_map(i) for i in range(len(datasets_list))]
 
     # Plot bars with individual points and error bars
     all_bars = plot_bars_with_points_and_errors(
@@ -830,12 +1070,24 @@ if output_mode in ['cross_age', 'both']:
 
     jsd_12, jsd_13, jsd_23 = calculate_distribution_jsd(global_freqs)
 
-    # Calculate bracket span from the actual x-axis range
-    bracket_start = -width / 2  # Start from left edge of first group
-    bracket_end = n_motifs - 1 + 2.5 * width  # End at right edge of last group
+    # Only add bracket annotation if we have enough timepoints
+    if not (np.isnan(jsd_12) and np.isnan(jsd_13) and np.isnan(jsd_23)):
+        # Calculate bracket span from the actual x-axis range
+        bracket_start = -width / 2  # Start from left edge of first group
+        bracket_end = n_motifs - 1 + 2.5 * width  # End at right edge of last group
 
-    jsd_text = f"P12-P20: {jsd_12:.3f}\nP12-P60: {jsd_13:.3f}\nP20-P60: {jsd_23:.3f}"
-    add_bracket_annotation(fig1, ax1, bracket_start, bracket_end, jsd_text)
+        # Build JSD text based on available comparisons
+        jsd_parts = []
+        if not np.isnan(jsd_12):
+            jsd_parts.append(f"P12-P20: {jsd_12:.3f}")
+        if not np.isnan(jsd_13):
+            jsd_parts.append(f"P12-P60: {jsd_13:.3f}")
+        if not np.isnan(jsd_23):
+            jsd_parts.append(f"P20-P60: {jsd_23:.3f}")
+        
+        if jsd_parts:
+            jsd_text = "\n".join(jsd_parts)
+            add_bracket_annotation(fig1, ax1, bracket_start, bracket_end, jsd_text)
 
     # Remove manual bottom adjustment since bracket function handles this automatically
     plt.tight_layout()
@@ -1024,17 +1276,29 @@ if output_mode in ['cross_age', 'both']:
         # Calculate JSDs for this domain
         jsd_12, jsd_13, jsd_23 = calculate_distribution_jsd(domain_freqs)
 
-        # Calculate bracket span using domain boundaries and actual bar layout
-        # Get the actual x positions of bars for this domain
-        first_motif_x = start  # x position of first motif in domain
-        last_motif_x = end  # x position of last motif in domain
+        # Only add bracket annotation if we have enough timepoints
+        if not (np.isnan(jsd_12) and np.isnan(jsd_13) and np.isnan(jsd_23)):
+            # Calculate bracket span using domain boundaries and actual bar layout
+            # Get the actual x positions of bars for this domain
+            first_motif_x = start  # x position of first motif in domain
+            last_motif_x = end  # x position of last motif in domain
 
-        # Calculate bracket span from leftmost bar edge to rightmost bar edge
-        bracket_start = first_motif_x - width / 2  # Left edge of first bar group
-        bracket_end = last_motif_x + width + width  # Right edge of last bar group
+            # Calculate bracket span from leftmost bar edge to rightmost bar edge
+            bracket_start = first_motif_x - width / 2  # Left edge of first bar group
+            bracket_end = last_motif_x + width + width  # Right edge of last bar group
 
-        jsd_text = f"P12-P20: {jsd_12:.3f}\nP12-P60: {jsd_13:.3f}\nP20-P60: {jsd_23:.3f}"
-        add_bracket_annotation(fig2, ax2, bracket_start, bracket_end, jsd_text)
+            # Build JSD text based on available comparisons
+            jsd_parts = []
+            if not np.isnan(jsd_12):
+                jsd_parts.append(f"P12-P20: {jsd_12:.3f}")
+            if not np.isnan(jsd_13):
+                jsd_parts.append(f"P12-P60: {jsd_13:.3f}")
+            if not np.isnan(jsd_23):
+                jsd_parts.append(f"P20-P60: {jsd_23:.3f}")
+            
+            if jsd_parts:
+                jsd_text = "\n".join(jsd_parts)
+                add_bracket_annotation(fig2, ax2, bracket_start, bracket_end, jsd_text)
 
     # Remove manual bottom adjustment since bracket function handles this automatically
     plt.tight_layout()
@@ -1102,9 +1366,14 @@ if output_mode in ['cross_age', 'both']:
     print("\n1. GLOBAL NORMALIZATION - Overall Distribution Comparison:")
     print("-" * 80)
     global_jsd_12, global_jsd_13, global_jsd_23 = calculate_distribution_jsd(global_freqs)
-    print(f"P12 vs P20: JSD = {global_jsd_12:.4f}")
-    print(f"P12 vs P60: JSD = {global_jsd_13:.4f}")
-    print(f"P20 vs P60: JSD = {global_jsd_23:.4f}")
+    if not np.isnan(global_jsd_12):
+        print(f"P12 vs P20: JSD = {global_jsd_12:.4f}")
+    if not np.isnan(global_jsd_13):
+        print(f"P12 vs P60: JSD = {global_jsd_13:.4f}")
+    if not np.isnan(global_jsd_23):
+        print(f"P20 vs P60: JSD = {global_jsd_23:.4f}")
+    if np.isnan(global_jsd_12) and np.isnan(global_jsd_13) and np.isnan(global_jsd_23):
+        print("Note: Not enough timepoints for JSD comparison (need at least 2)")
 
     print("\n2. DOMAIN-WISE NORMALIZATION - Domain-specific Comparisons Only:")
     print("-" * 80)
@@ -1125,9 +1394,12 @@ if output_mode in ['cross_age', 'both']:
         )
 
         print(f"Domain {domain} ({len(domain_motifs)} motifs):")
-        print(f"  P12 vs P20: JSD = {domain_jsd_12:.4f}")
-        print(f"  P12 vs P60: JSD = {domain_jsd_13:.4f}")
-        print(f"  P20 vs P60: JSD = {domain_jsd_23:.4f}")
+        if not np.isnan(domain_jsd_12):
+            print(f"  P12 vs P20: JSD = {domain_jsd_12:.4f}")
+        if not np.isnan(domain_jsd_13):
+            print(f"  P12 vs P60: JSD = {domain_jsd_13:.4f}")
+        if not np.isnan(domain_jsd_23):
+            print(f"  P20 vs P60: JSD = {domain_jsd_23:.4f}")
 
     print("\n3. DOMAIN COMPOSITION:")
     print("-" * 80)
@@ -1222,14 +1494,21 @@ if output_mode in ['cross_age', 'both']:
         "• Significant Kruskal-Wallis results (p < 0.05) indicate developmental changes in motif usage"
     )
 
-# New per-age plot generation
-if output_mode in ['per_age', 'both']:
-    print("\n" + "=" * 100)
-    print("GENERATING PER-AGE INDIVIDUAL ANIMAL PLOTS")
-    print("=" * 100)
-    generate_per_age_plots(datasets, all_motifs, RESULTS_DIR, "global")
-    generate_per_age_plots(datasets, all_motifs, RESULTS_DIR, "domain")
+    # New per-age plot generation
+    if output_mode in ['per_age', 'both']:
+        print("\n" + "=" * 100)
+        print(f"GENERATING PER-AGE INDIVIDUAL ANIMAL PLOTS ({model_type.upper()} MODEL)")
+        print("=" * 100)
+        generate_per_age_plots(datasets, all_motifs, RESULTS_DIR, "global")
+        generate_per_age_plots(datasets, all_motifs, RESULTS_DIR, "domain")
+    
+    print(f"\n📁 All {model_type} model results saved to: {RESULTS_DIR}")
+    
+    # Restore original RESULTS_DIR for next iteration
+    RESULTS_DIR = original_results_dir
 
 print(f"\n📁 All results saved to: {RESULTS_DIR}")
+print("   - Uniform model: {}/uniform/".format(RESULTS_DIR))
+print("   - Region-specific model: {}/region_specific/".format(RESULTS_DIR))
 print("📊 SVG figures can be edited in vector graphics software")
 print("📈 CSV files contain detailed statistical results for further analysis")

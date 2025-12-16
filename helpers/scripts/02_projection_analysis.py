@@ -10,6 +10,7 @@ from scipy import stats
 import os
 import glob
 import time
+from pathlib import Path
 from itertools import combinations
 
 # Set font to Helvetica with Arial fallback, and ensure SVG text is editable
@@ -74,9 +75,18 @@ def analyze_projection_data(df, metadata=None, comparison_name="", save_dir=None
     fig.suptitle(f"PCA Analysis: {comparison_name}", fontsize=16, fontweight="bold")
 
     # First compute hierarchical clustering for ordering (like the paper)
-    linkage_matrix = linkage(df_norm, method="ward")
-    dendro = dendrogram(linkage_matrix, no_plot=True)
-    cluster_order = dendro["leaves"]
+    try:
+        linkage_matrix = linkage(df_norm, method="ward")
+        # Check if linkage matrix is valid
+        if linkage_matrix.size == 0 or len(linkage_matrix) == 0:
+            print("  Warning: Empty linkage matrix, using default order")
+            cluster_order = np.arange(len(df_norm))
+        else:
+            dendro = dendrogram(linkage_matrix, no_plot=True)
+            cluster_order = dendro["leaves"]
+    except Exception as e:
+        print(f"  Warning: Clustering failed: {e}, using default order")
+        cluster_order = np.arange(len(df_norm))
 
     # PC heatmap (barcodes x PCs) - sorted by clustering
     ax1 = plt.subplot(2, 2, 1)
@@ -209,10 +219,17 @@ def analyze_projection_data(df, metadata=None, comparison_name="", save_dir=None
 
             # Hierarchical clustering within this age group (like the paper)
             if len(age_data) > 1:
-                age_linkage = linkage(age_data, method="ward")
-                age_dendro = dendrogram(age_linkage, no_plot=True)
-                age_cluster_order = age_dendro["leaves"]
-                age_sorted = age_data.iloc[age_cluster_order]
+                try:
+                    age_linkage = linkage(age_data, method="ward")
+                    if age_linkage.size == 0 or len(age_linkage) == 0:
+                        age_cluster_order = np.arange(len(age_data))
+                    else:
+                        age_dendro = dendrogram(age_linkage, no_plot=True)
+                        age_cluster_order = age_dendro["leaves"]
+                    age_sorted = age_data.iloc[age_cluster_order]
+                except Exception as e:
+                    print(f"  Warning: Age clustering failed: {e}, using default order")
+                    age_sorted = age_data
             else:
                 age_sorted = age_data
 
@@ -663,12 +680,102 @@ def load_and_analyze_directory(base_directory, save_dir=None):
         os.makedirs(save_dir)
         print(f"Created results directory: {save_dir}")
 
-    # Find CSV files matching the pattern: {age}_*_HAN_filters_Filtered_Matrix.csv
-    # Search recursively in subdirectories (p12, p20, p60, etc.)
-    # Note: pattern matches both "ALL" and "alL" (case variations)
-    pattern1 = os.path.join(base_directory, "**", "*_ALL_HAN_filters_Filtered_Matrix.csv")
-    pattern2 = os.path.join(base_directory, "**", "*_alL_HAN_filters_Filtered_Matrix.csv")
-    csv_files = glob.glob(pattern1, recursive=True) + glob.glob(pattern2, recursive=True)
+    # Determine if we're in a parameterization-specific directory
+    # Extract parameterization name from helper_output_dir if available, or search in base_directory
+    base_path = Path(base_directory)
+    search_dir = base_directory
+    filter_type = None
+    parameterization_filter = None
+    
+    # Try to extract parameterization name and filter type from helper_output_dir path if available
+    if save_dir:
+        save_path = Path(save_dir)
+        # Check if save_dir contains a parameterization name (e.g., .../01.minimal_filter_parameters_..._helpers/...)
+        for part in save_path.parts:
+            if part.startswith(('01.', '02.', '03.', '04.', '05.')):
+                # Extract parameterization name (before _helpers if present)
+                if '_helpers' in part:
+                    parameterization_filter = part.split('_helpers')[0]
+                else:
+                    parameterization_filter = part
+                # Extract filter type from parameterization name
+                if 'minimal' in part:
+                    filter_type = 'minimal'
+                elif 'medium' in part:
+                    filter_type = 'medium'
+                elif 'strict' in part:
+                    filter_type = 'strict'
+                elif 'extreme' in part:
+                    filter_type = 'extreme'
+                elif 'HAN' in part:
+                    filter_type = 'HAN'
+                break
+    
+    # If not found in save_dir, search for parameterization directories in base_directory
+    if filter_type is None:
+        # Search for parameterization directories in base_directory
+        for age_dir in ['p3', 'p12', 'p20', 'p60']:
+            age_path = Path(base_directory) / age_dir
+            if age_path.exists():
+                for param_dir in age_path.iterdir():
+                    if param_dir.is_dir() and param_dir.name.startswith(('01.', '02.', '03.', '04.', '05.')):
+                        # Extract filter type
+                        if 'minimal' in param_dir.name:
+                            filter_type = 'minimal'
+                        elif 'medium' in param_dir.name:
+                            filter_type = 'medium'
+                        elif 'strict' in param_dir.name:
+                            filter_type = 'strict'
+                        elif 'extreme' in param_dir.name:
+                            filter_type = 'extreme'
+                        elif 'HAN' in param_dir.name:
+                            filter_type = 'HAN'
+                        break
+                if filter_type:
+                    break
+    
+    if filter_type:
+        print(f"Detected filter type: {filter_type}")
+    if parameterization_filter:
+        print(f"Filtering by parameterization: {parameterization_filter}")
+    print(f"Searching in: {search_dir}")
+    
+    # Find CSV files matching the pattern: {age}_ALL_{filter_type}_filters_Filtered_Matrix.csv
+    # If filter_type is specified, only search for that type; otherwise search for all types
+    filter_types = [filter_type] if filter_type else ['minimal', 'medium', 'strict', 'extreme', 'HAN']
+    csv_files = []
+    
+    for ft in filter_types:
+        if ft is None:
+            continue
+        # Try multiple case variations for "ALL" and age prefixes
+        # IMPORTANT: Filter by parameterization directory if specified
+        if parameterization_filter:
+            # Only search within the specific parameterization directories
+            patterns = []
+            for age_dir in ['p3', 'p12', 'p20', 'p60']:
+                param_path = Path(search_dir) / age_dir / parameterization_filter
+                if param_path.exists():
+                    patterns.extend([
+                        str(param_path / "**" / f"*_ALL_{ft}_filters_Filtered_Matrix.csv"),
+                        str(param_path / "**" / f"*_alL_{ft}_filters_Filtered_Matrix.csv"),
+                        str(param_path / "**" / f"*_All_{ft}_filters_Filtered_Matrix.csv"),
+                        str(param_path / "**" / f"*_aLl_{ft}_filters_Filtered_Matrix.csv"),
+                    ])
+        else:
+            # Search all parameterizations (old behavior)
+            patterns = [
+                os.path.join(search_dir, "**", f"*_ALL_{ft}_filters_Filtered_Matrix.csv"),
+                os.path.join(search_dir, "**", f"*_alL_{ft}_filters_Filtered_Matrix.csv"),
+                os.path.join(search_dir, "**", f"*_All_{ft}_filters_Filtered_Matrix.csv"),
+                os.path.join(search_dir, "**", f"*_aLl_{ft}_filters_Filtered_Matrix.csv"),
+                # Also try case variations for age prefix (p3, P3, p12, P12, etc.)
+                os.path.join(search_dir, "**", f"p*_ALL_{ft}_filters_Filtered_Matrix.csv"),
+                os.path.join(search_dir, "**", f"P*_ALL_{ft}_filters_Filtered_Matrix.csv"),
+            ]
+        for pattern in patterns:
+            csv_files.extend(glob.glob(pattern, recursive=True))
+    
     # Remove duplicates
     csv_files = list(set(csv_files))
 
@@ -797,11 +904,26 @@ def load_and_analyze_directory(base_directory, save_dir=None):
 
 # Usage:
 from pathlib import Path
+import argparse
+
+parser = argparse.ArgumentParser(description="Analyze projection data")
+parser.add_argument('--base_output_dir', type=str, default=None,
+                   help='Base output directory for processing results (default: REPO_ROOT/02_output)')
+parser.add_argument('--helper_output_dir', type=str, default=None,
+                   help='Directory for helper script outputs (default: helpers/outputs/02_projection_analysis)')
+args = parser.parse_args()
 
 # Get the repository root (assuming helpers/ is a subdirectory)
 REPO_ROOT = Path(__file__).parent.parent.parent
-DEFAULT_DATA_DIR = REPO_ROOT / "02_output"
-DEFAULT_SAVE_DIR = Path(__file__).parent.parent / "outputs" / "02_projection_analysis"
+if args.base_output_dir:
+    DEFAULT_DATA_DIR = Path(args.base_output_dir)
+else:
+    DEFAULT_DATA_DIR = REPO_ROOT / "02_output"
+
+if args.helper_output_dir:
+    DEFAULT_SAVE_DIR = Path(args.helper_output_dir)
+else:
+    DEFAULT_SAVE_DIR = Path(__file__).parent.parent / "outputs" / "02_projection_analysis"
 
 # Use 02_output as the base directory, it will search for *_ALL_HAN_filters_Filtered_Matrix.csv files
 results = load_and_analyze_directory(

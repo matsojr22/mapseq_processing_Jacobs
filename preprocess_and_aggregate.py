@@ -2,8 +2,49 @@ import os
 import argparse
 import pandas as pd
 import numpy as np
+import yaml
+import json
+from pathlib import Path
 
-def get_column_mapping(original_columns, filename):
+def load_mapping_file(mapping_file_path):
+    """Load column mappings from YAML or JSON file"""
+    mapping_path = Path(mapping_file_path)
+    if not mapping_path.exists():
+        raise FileNotFoundError(f"Mapping file not found: {mapping_file_path}")
+    
+    with open(mapping_path, 'r', encoding='utf-8') as f:
+        if mapping_path.suffix.lower() in ['.yaml', '.yml']:
+            return yaml.safe_load(f) or {}
+        elif mapping_path.suffix.lower() == '.json':
+            return json.load(f)
+        else:
+            raise ValueError(f"Unsupported mapping file format: {mapping_path.suffix}")
+
+def get_column_mapping(original_columns, filename, mapping_file_data=None):
+    """
+    Get column mapping either from file or interactively
+    
+    Args:
+        original_columns: List of original column names
+        filename: Name of the file being processed
+        mapping_file_data: Dictionary with mappings (from --mapping-file)
+    """
+    # If mapping file provided, use it
+    if mapping_file_data:
+        file_mappings = mapping_file_data.get('column_mappings', {}).get(filename, {})
+        if file_mappings:
+            print(f"\n📂 Processing file: {filename} (using mapping file)")
+            # Validate all columns are mapped
+            mapping = {}
+            for col in original_columns:
+                if col in file_mappings:
+                    mapping[col] = file_mappings[col]
+                else:
+                    print(f"⚠️  Warning: Column '{col}' not found in mapping file, using original name")
+                    mapping[col] = col
+            return mapping
+    
+    # Interactive mode (original behavior)
     print(f"\n📂 Processing file: {filename}")
     print("Detected columns:")
 
@@ -23,7 +64,28 @@ def get_column_mapping(original_columns, filename):
         mapping[current_col] = new_col
     return mapping
 
-def identify_neg_column(columns, default_neg=None, max_attempts=3):
+def identify_neg_column(columns, default_neg=None, max_attempts=3, mapping_file_data=None, filename=None):
+    """
+    Identify negative control column either from file or interactively
+    
+    Args:
+        columns: List of standardized column names
+        default_neg: Default negative column name
+        max_attempts: Maximum attempts for interactive input
+        mapping_file_data: Dictionary with mappings (from --mapping-file)
+        filename: Name of the file being processed
+    """
+    # If mapping file provided, use it
+    if mapping_file_data and filename:
+        neg_columns = mapping_file_data.get('negative_columns', {})
+        neg_col = neg_columns.get(filename)
+        if neg_col and neg_col in columns:
+            print(f"✅ Using 'neg' column from mapping file: {neg_col}")
+            return neg_col
+        elif neg_col:
+            print(f"⚠️  Warning: Specified neg column '{neg_col}' not found in standardized columns")
+    
+    # Interactive mode (original behavior)
     print(f"\nStandardized columns: {columns}")
     attempts = 0
     while attempts < max_attempts:
@@ -42,16 +104,17 @@ def identify_neg_column(columns, default_neg=None, max_attempts=3):
     print("❌ Max attempts reached. Skipping 'neg' thresholding.")
     return None
 
-def preprocess_file(filepath, outdir, fallback_threshold=2):
+def preprocess_file(filepath, outdir, fallback_threshold=2, mapping_file_data=None):
     df = pd.read_csv(filepath, sep='\t', header=0)
     base = os.path.basename(filepath).replace('.tsv', '')
-
+    filename = os.path.basename(filepath)
+    
     original_file_columns = df.columns.tolist()
-    column_mapping = get_column_mapping(original_file_columns, os.path.basename(filepath))
+    column_mapping = get_column_mapping(original_file_columns, filename, mapping_file_data)
     df = df.rename(columns=column_mapping)
     standardized_cols = df.columns.tolist()
-
-    neg_col = identify_neg_column(standardized_cols, default_neg='neg')
+    
+    neg_col = identify_neg_column(standardized_cols, default_neg='neg', mapping_file_data=mapping_file_data, filename=filename)
 
     if "barcodes" not in df.columns:
         raise ValueError(f"❌ You must map a column to 'barcodes' in {filepath}")
@@ -91,18 +154,28 @@ def preprocess_file(filepath, outdir, fallback_threshold=2):
 
 
 
-def main(input_dir, output_dir, fallback_threshold):
+def main(input_dir, output_dir, fallback_threshold, mapping_file=None):
     os.makedirs(output_dir, exist_ok=True)
     cleaned_dfs = []
-
+    
+    # Load mapping file if provided
+    mapping_file_data = None
+    if mapping_file:
+        try:
+            mapping_file_data = load_mapping_file(mapping_file)
+            print(f"✅ Loaded column mappings from: {mapping_file}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not load mapping file: {e}")
+            print("   Falling back to interactive mode")
+    
     # Track column order in order of first appearance
     column_order = []
     seen_columns = set()
-
+    
     for file in os.listdir(input_dir):
         if file.endswith(".tsv"):
             full_path = os.path.join(input_dir, file)
-            cleaned_df = preprocess_file(full_path, output_dir, fallback_threshold)
+            cleaned_df = preprocess_file(full_path, output_dir, fallback_threshold, mapping_file_data)
             cleaned_dfs.append(cleaned_df)
             for col in cleaned_df.columns:
                 if col not in seen_columns:
@@ -142,6 +215,8 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--input_dir", required=True, help="Directory with replicate .tsv files")
     parser.add_argument("-o", "--output_dir", required=True, help="Where to save cleaned and aggregated files")
     parser.add_argument("-t", "--fallback_threshold", type=float, default=2.0, help="Used if neg column has no data")
+    parser.add_argument("--mapping-file", type=str, default=None,
+                       help="YAML or JSON file with column mappings (skips interactive prompts)")
 
     args = parser.parse_args()
-    main(args.input_dir, args.output_dir, args.fallback_threshold)
+    main(args.input_dir, args.output_dir, args.fallback_threshold, args.mapping_file)

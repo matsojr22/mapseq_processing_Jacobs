@@ -97,54 +97,67 @@ Examples:
         """
     )
     
-    parser.add_argument('--base_dir', type=str, default=None,
-                       help='Base directory containing 02_output/ (default: script parent parent)')
-    parser.add_argument('--output_dir', type=str, default=None,
-                       help='Output directory for summary CSV (default: script directory)')
-    parser.add_argument('--parameterization', type=str, default="05.HAN_filter_parameters_i300_r10_t10_u5",
-                       help='Parameterization name to use for output folder naming (e.g., 05.HAN_filter_parameters_i300_r10_t10_u5)')
+    parser.add_argument('--base_output_dir', type=str, default=None,
+                       help='Base output directory for processing results (default: REPO_ROOT/02_output)')
+    parser.add_argument('--helper_output_dir', type=str, default=None,
+                       help='Directory for helper script outputs (default: helpers/outputs/13_aggregate_projection_summaries)')
     
     args = parser.parse_args()
     
+    # Get repository root (assuming helpers/ is a subdirectory)
+    REPO_ROOT = Path(__file__).parent.parent.parent
+    
     # Determine base directory
-    if args.base_dir:
-        base_dir = Path(args.base_dir)
+    if args.base_output_dir:
+        OUTPUT_BASE = Path(args.base_output_dir)
     else:
-        # Default: assume script is in helpers/scripts/
-        # and we want to go up to repo root
-        script_dir = Path(__file__).parent
-        base_dir = script_dir.parent.parent
+        OUTPUT_BASE = REPO_ROOT / "02_output"
     
-    output_base = base_dir / "02_output"
-    
-    if not output_base.exists():
-        print(f"Error: Output directory not found: {output_base}")
-        print(f"Please specify --base_dir or ensure 02_output/ exists relative to script location")
+    if not OUTPUT_BASE.exists():
+        print(f"Error: Output directory not found: {OUTPUT_BASE}")
+        print(f"Please specify --base_output_dir or ensure 02_output/ exists relative to script location")
         return 1
+    
+    # Extract parameterization name from helper_output_dir if provided
+    parameterization_filter = None
+    if args.helper_output_dir:
+        helper_path = Path(args.helper_output_dir)
+        # Look for parameterization name in path (e.g., .../01.minimal_filter_parameters_..._helpers/...)
+        for part in helper_path.parts:
+            if part.startswith(('01.', '02.', '03.', '04.', '05.')) and '_helpers' in part:
+                # Extract just the parameterization name (before _helpers)
+                parameterization_filter = part.split('_helpers')[0]
+                print(f"Filtering by parameterization: {parameterization_filter}")
+                break
+            elif part.startswith(('01.', '02.', '03.', '04.', '05.')):
+                parameterization_filter = part
+                print(f"Filtering by parameterization: {parameterization_filter}")
+                break
     
     # Determine output directory - follow same pattern as other helper scripts:
     # 02_output/{parameterization}_helpers/13_aggregate_projection_summaries/
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
+    SCRIPT_DIR = Path(__file__).parent
+    if args.helper_output_dir:
+        output_dir = Path(args.helper_output_dir)
     else:
-        output_dir = (
-            output_base
-            / f"{args.parameterization}_helpers"
-            / "13_aggregate_projection_summaries"
-        )
+        if parameterization_filter:
+            output_dir = OUTPUT_BASE / f"{parameterization_filter}_helpers" / "13_aggregate_projection_summaries"
+        else:
+            # Default fallback
+            output_dir = SCRIPT_DIR.parent / "outputs" / "13_aggregate_projection_summaries"
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"Searching for projection_summary.csv files in: {output_base}")
+    print(f"Searching for projection_summary.csv files in: {OUTPUT_BASE}")
     print(f"Output will be saved to: {output_dir}")
     print("=" * 80)
     
     # Find all projection_summary.csv files
-    pattern = str(output_base / "**" / "projection_summary.csv")
+    pattern = str(OUTPUT_BASE / "**" / "projection_summary.csv")
     summary_files = glob.glob(pattern, recursive=True)
     
     if not summary_files:
-        print(f"Error: No projection_summary.csv files found in {output_base}")
+        print(f"Error: No projection_summary.csv files found in {OUTPUT_BASE}")
         return 1
     
     print(f"Found {len(summary_files)} projection_summary.csv files")

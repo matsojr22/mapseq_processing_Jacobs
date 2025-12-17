@@ -3,7 +3,7 @@ matplotlib.use("Agg")  # Use non-GUI backend to avoid Qt/Wayland errors
 
 import pandas as pd
 import numpy as np
-from scipy.stats import chi2_contingency
+from scipy.stats import chi2_contingency, kruskal, norm
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
@@ -23,9 +23,9 @@ args = parser.parse_args()
 
 REPO_ROOT = Path(__file__).parent.parent
 if args.base_output_dir:
-    OUTPUT_DIR = Path(args.base_output_dir)
+    OUTPUT_DIR_BASE = Path(args.base_output_dir)
 else:
-    OUTPUT_DIR = REPO_ROOT / "02_output"
+    OUTPUT_DIR_BASE = REPO_ROOT / "02_output"
 
 # Extract parameterization name and filter type from helper_output_dir if provided
 parameterization_filter = None
@@ -70,7 +70,7 @@ for age in age_groups:
     # Filter by parameterization and filter type if specified
     if parameterization_filter and filter_type:
         # Search only in the specific parameterization directory
-        param_path = OUTPUT_DIR / age / parameterization_filter
+        param_path = OUTPUT_DIR_BASE / age / parameterization_filter
         if param_path.exists():
             patterns = [
                 str(param_path / "**" / f"*ALL_{filter_type}_filters_pie_chart_data.csv"),
@@ -88,12 +88,12 @@ for age in age_groups:
     else:
         # Original behavior: search for HAN filters (backward compatibility)
         patterns = [
-            str(OUTPUT_DIR / age / "**" / f"*ALL_HAN_filters_pie_chart_data.csv"),
-            str(OUTPUT_DIR / age / "**" / f"*alL_HAN_filters_pie_chart_data.csv"),
-            str(OUTPUT_DIR / age / "**" / f"{age.upper()}_ALL_HAN_filters_pie_chart_data.csv"),
-            str(OUTPUT_DIR / age / "**" / f"{age.lower()}_ALL_HAN_filters_pie_chart_data.csv"),
-            str(OUTPUT_DIR / age / "**" / f"{age.upper()}_alL_HAN_filters_pie_chart_data.csv"),
-            str(OUTPUT_DIR / age / "**" / f"{age.lower()}_alL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR_BASE / age / "**" / f"*ALL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR_BASE / age / "**" / f"*alL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR_BASE / age / "**" / f"{age.upper()}_ALL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR_BASE / age / "**" / f"{age.lower()}_ALL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR_BASE / age / "**" / f"{age.upper()}_alL_HAN_filters_pie_chart_data.csv"),
+            str(OUTPUT_DIR_BASE / age / "**" / f"{age.lower()}_alL_HAN_filters_pie_chart_data.csv"),
         ]
     files = []
     for pattern in patterns:
@@ -254,6 +254,65 @@ def clr_transform(x):
     geometric_mean = np.exp(np.mean(np.log(x)))
     return np.log(x / geometric_mean)
 
+def dunn_posthoc(groups, group_names):
+    """
+    Perform Dunn's post hoc test for pairwise comparisons after Kruskal-Wallis.
+    
+    Args:
+        groups: List of arrays, one for each group
+        group_names: List of group names
+        
+    Returns:
+        DataFrame with pairwise comparison results
+    """
+    from scipy.stats import rankdata
+    
+    # Combine all data and rank
+    all_data = np.concatenate(groups)
+    ranks = rankdata(all_data)
+    
+    # Split ranks back into groups
+    group_ranks = []
+    start_idx = 0
+    for group in groups:
+        n = len(group)
+        group_ranks.append(ranks[start_idx:start_idx+n])
+        start_idx += n
+    
+    # Calculate mean ranks
+    mean_ranks = [np.mean(gr) for gr in group_ranks]
+    n_groups = len(groups)
+    n_total = len(all_data)
+    
+    # Calculate pairwise z-scores and p-values
+    results = []
+    for i in range(n_groups):
+        for j in range(i+1, n_groups):
+            n_i = len(groups[i])
+            n_j = len(groups[j])
+            
+            # Dunn's test statistic (z-score)
+            z = (mean_ranks[i] - mean_ranks[j]) / np.sqrt((n_total * (n_total + 1) / 12) * (1/n_i + 1/n_j))
+            
+            # Two-tailed p-value with Bonferroni correction
+            # Number of comparisons = n_groups * (n_groups - 1) / 2
+            n_comparisons = n_groups * (n_groups - 1) / 2
+            p_value = 2 * (1 - norm.cdf(abs(z)))
+            p_value_corrected = min(1.0, p_value * n_comparisons)
+            
+            results.append({
+                'Group1': group_names[i],
+                'Group2': group_names[j],
+                'Mean_Rank_Group1': mean_ranks[i],
+                'Mean_Rank_Group2': mean_ranks[j],
+                'Z_score': z,
+                'p_value': p_value,
+                'p_value_corrected': p_value_corrected,
+                'significant': p_value_corrected < 0.05
+            })
+    
+    return pd.DataFrame(results)
+
 # Only perform CLR transformation if we have non-zero data
 if not df.empty and df.sum().sum() > 0:
     clr_df = df.apply(clr_transform, axis=0).T  # rows = ages, cols = clr(target types)
@@ -341,3 +400,205 @@ if not resid_df.empty and not resid_df.isna().all().all():
     plt.close()
 else:
     print("Warning: Cannot create residuals heatmap - insufficient data")
+
+# --- Step 6: Kruskal-Wallis test with Dunn's post hoc ---
+print("\n" + "=" * 80)
+print("KRUSKAL-WALLIS TEST WITH DUNN'S POST HOC")
+print("=" * 80)
+
+# Load individual animal pie chart data for Kruskal-Wallis
+# We need multiple observations per group for valid statistical testing
+individual_animal_data = {age: [] for age in age_groups}
+
+for age in age_groups:
+    if parameterization_filter and filter_type:
+        # Look for individual animal pie chart files (NOT containing "ALL")
+        age_dir = OUTPUT_DIR_BASE / age / parameterization_filter
+        if age_dir.exists():
+            # Individual animal files don't have filter type in name, just _pie_chart_data.csv
+            patterns = [
+                str(age_dir / "analysis" / "*pie_chart_data.csv"),
+                str(age_dir / "**" / "*pie_chart_data.csv"),
+            ]
+            files = []
+            for pattern in patterns:
+                files.extend(glob.glob(pattern, recursive=True))
+            
+            # Filter out aggregate files (containing "ALL" or "alL" in name)
+            individual_files = [f for f in files if "_ALL_" not in os.path.basename(f).upper() and "alL" not in os.path.basename(f)]
+            
+            if individual_files:
+                print(f"\nFound {len(individual_files)} individual animal files for {age}")
+                
+                # Load and calculate proportions for each animal
+                for file_path in individual_files:
+                    try:
+                        df_temp = pd.read_csv(file_path, index_col=0)
+                        if '# Cells' in df_temp.columns:
+                            counts_col = '# Cells'
+                        elif 'Cells' in df_temp.columns:
+                            counts_col = 'Cells'
+                        else:
+                            counts_col = df_temp.columns[0]
+                        
+                        # Calculate proportions for this animal
+                        total_cells = df_temp[counts_col].sum()
+                        if total_cells > 0:
+                            animal_proportions = {}
+                            for target_type in target_types:
+                                # Try to match target type
+                                count = 0
+                                for idx in df_temp.index:
+                                    target_type_str = str(idx).strip()
+                                    # Try exact match
+                                    if target_type_str.lower() == target_type.lower():
+                                        count = int(df_temp.loc[idx, counts_col])
+                                        break
+                                    # Try matching just the number
+                                    if count == 0:
+                                        target_num = target_type.split()[0]
+                                        if target_type_str.startswith(target_num):
+                                            count = int(df_temp.loc[idx, counts_col])
+                                            break
+                                
+                                # Calculate proportion
+                                proportion = (count / total_cells) * 100
+                                animal_proportions[target_type] = proportion
+                            
+                            individual_animal_data[age].append(animal_proportions)
+                    except Exception as e:
+                        print(f"  Warning: Error loading {file_path}: {e}")
+                        continue
+
+# Check if we have individual animal data
+has_individual_data = any(len(individual_animal_data[age]) > 0 for age in age_groups)
+
+if not has_individual_data:
+    print("\nWarning: No individual animal data found. Falling back to aggregated proportions.")
+    print("  Kruskal-Wallis test requires multiple observations per group for valid statistics.")
+    print("  Results will be based on aggregated data (one value per age group per target type).")
+    use_individual_data = False
+else:
+    print(f"\nUsing individual animal data for Kruskal-Wallis test")
+    for age in age_groups:
+        n_animals = len(individual_animal_data[age])
+        if n_animals > 0:
+            print(f"  {age}: {n_animals} animals")
+    use_individual_data = True
+
+# Perform Kruskal-Wallis test for each target type
+kw_results = []
+dunn_results_all = []
+
+for target_type in df.index:
+    groups = []
+    group_names = []
+    
+    if use_individual_data:
+        # Use individual animal proportions
+        for age in age_groups:
+            age_values = []
+            for animal_data in individual_animal_data[age]:
+                if target_type in animal_data:
+                    age_values.append(animal_data[target_type])
+            if len(age_values) > 0:
+                groups.append(np.array(age_values))
+                group_names.append(age)
+    else:
+        # Fallback to aggregated proportions (one value per age group)
+        for age in age_groups:
+            if age in df.columns and not pd.isna(df.loc[target_type, age]):
+                groups.append(np.array([df.loc[target_type, age]]))
+                group_names.append(age)
+    
+    if len(groups) < 2:
+        print(f"\nWarning: Insufficient groups for {target_type} (need at least 2, found {len(groups)})")
+        kw_results.append({
+            'Target_Type': target_type,
+            'H_statistic': np.nan,
+            'p_value': np.nan,
+            'n_groups': len(groups),
+            'note': 'Insufficient groups'
+        })
+        continue
+    
+    # Perform Kruskal-Wallis test
+    try:
+        h_stat, p_value = kruskal(*groups)
+        
+        kw_results.append({
+            'Target_Type': target_type,
+            'H_statistic': h_stat,
+            'p_value': p_value,
+            'n_groups': len(groups),
+            'significant': p_value < 0.05,
+            'note': 'Individual animal data' if use_individual_data else 'Aggregated data from compositional_proportions.csv'
+        })
+        
+        print(f"\n{target_type}:")
+        print(f"  Kruskal-Wallis H = {h_stat:.4f}, p = {p_value:.6f}")
+        
+        # If significant, perform Dunn's post hoc test
+        if p_value < 0.05 and len(groups) > 2:
+            print(f"  Significant difference detected (p < 0.05). Performing Dunn's post hoc test...")
+            dunn_df = dunn_posthoc(groups, group_names)
+            dunn_df['Target_Type'] = target_type
+            dunn_results_all.append(dunn_df)
+            
+            # Print significant pairwise comparisons
+            significant_pairs = dunn_df[dunn_df['significant']]
+            if len(significant_pairs) > 0:
+                print(f"  Significant pairwise comparisons:")
+                for _, row in significant_pairs.iterrows():
+                    print(f"    {row['Group1']} vs {row['Group2']}: z = {row['Z_score']:.4f}, "
+                          f"p (corrected) = {row['p_value_corrected']:.6f}")
+            else:
+                print(f"  No significant pairwise comparisons after correction")
+        elif p_value < 0.05 and len(groups) == 2:
+            print(f"  Significant difference detected, but only 2 groups (no post hoc needed)")
+        else:
+            print(f"  No significant difference (p >= 0.05)")
+            
+    except Exception as e:
+        print(f"\nError performing Kruskal-Wallis test for {target_type}: {e}")
+        kw_results.append({
+            'Target_Type': target_type,
+            'H_statistic': np.nan,
+            'p_value': np.nan,
+            'n_groups': len(groups),
+            'note': f'Error: {str(e)}'
+        })
+
+# Save results
+kw_df = pd.DataFrame(kw_results)
+kw_df.to_csv(OUTPUT_DIR / "kruskal_wallis_results.csv", index=False)
+print(f"\n✅ Kruskal-Wallis results saved to: {OUTPUT_DIR / 'kruskal_wallis_results.csv'}")
+
+if dunn_results_all:
+    dunn_combined = pd.concat(dunn_results_all, ignore_index=True)
+    # Reorder columns
+    cols = ['Target_Type', 'Group1', 'Group2', 'Mean_Rank_Group1', 'Mean_Rank_Group2', 
+            'Z_score', 'p_value', 'p_value_corrected', 'significant']
+    dunn_combined = dunn_combined[cols]
+    dunn_combined.to_csv(OUTPUT_DIR / "dunn_posthoc_results.csv", index=False)
+    print(f"✅ Dunn's post hoc results saved to: {OUTPUT_DIR / 'dunn_posthoc_results.csv'}")
+else:
+    print("Note: No Dunn's post hoc results (no significant Kruskal-Wallis tests or insufficient groups)")
+
+# Create combined summary
+summary_data = []
+for _, row in kw_df.iterrows():
+    summary_data.append({
+        'Target_Type': row['Target_Type'],
+        'Kruskal_Wallis_H': row['H_statistic'],
+        'Kruskal_Wallis_p': row['p_value'],
+        'Kruskal_Wallis_significant': row.get('significant', False),
+        'n_groups': row['n_groups'],
+        'Data_Type': row.get('note', 'Individual animal data' if use_individual_data else 'Aggregated data from compositional_proportions.csv')
+    })
+
+summary_df = pd.DataFrame(summary_data)
+summary_df.to_csv(OUTPUT_DIR / "statistical_summary.csv", index=False)
+print(f"✅ Statistical summary saved to: {OUTPUT_DIR / 'statistical_summary.csv'}")
+
+print(f"\n📁 All results saved to: {OUTPUT_DIR}")

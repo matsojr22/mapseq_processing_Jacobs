@@ -1,10 +1,13 @@
 PySimpleGUI
 adjustText
 argparse
+customtkinter
 matplotlib
 networkx
 numpy
 pandas
+Pillow
+pyyaml
 regex
 scikit-learn
 scipy

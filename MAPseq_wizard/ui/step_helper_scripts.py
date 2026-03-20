@@ -35,6 +35,7 @@ class HelperScriptsStep(ctk.CTkFrame):
             ('05', 'Motif Analysis (required for 06, 07)'),
             ('06', 'All Motif Divergence (requires 05)'),
             ('07', 'Motif Significance Trajectories (requires 05)'),
+            ('15', 'Volcano Trajectories (requires 07)'),
             ('08', 'Motif Clustering (requires 07)'),
             ('09', 'Plot Normalized Projection Strength'),
             ('13', 'Aggregate Projection Summaries'),
@@ -60,3 +61,5 @@ class HelperScriptsStep(ctk.CTkFrame):
     def validate(self):
         """Validate inputs"""
         return True, None
+
+

@@ -78,8 +78,10 @@ print("Generating motif_percent_matrix_by_age.csv from 02_output aggregate upset
 # Dictionary to store data for each age
 age_motif_data = {}
 
-# Process both models separately
-models_to_process = ['uniform', 'region_specific']
+# Process all three models separately
+models_to_process = ['uniform', 'region_specific', 'correlated', 'empirical', 'smoothed_empirical', 
+                     'max_entropy', 'hierarchical_correlations', 'negative_binomial', 'zero_inflated',
+                     'bayesian_hierarchical', 'ml_nonparametric']
 
 for model_type in models_to_process:
     print("\n" + "="*80)

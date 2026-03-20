@@ -84,3 +84,5 @@ class QCFiguresStep(ctk.CTkFrame):
             if not self.param_entry.get().strip():
                 return False, "Parameterization is required for figure generation"
         return True, None
+
+

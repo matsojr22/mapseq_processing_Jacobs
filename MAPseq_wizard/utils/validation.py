@@ -111,3 +111,5 @@ def validate_numeric(value, min_val=None, max_val=None, allow_float=True):
         return False, f"Value must be <= {max_val}"
     
     return True, None
+
+

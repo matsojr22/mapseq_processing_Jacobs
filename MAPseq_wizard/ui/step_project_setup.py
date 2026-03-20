@@ -83,3 +83,5 @@ class ProjectSetupStep(ctk.CTkFrame):
         if not Path(self.repo_root_entry.get()).exists():
             return False, "Repository root directory does not exist"
         return True, None
+
+

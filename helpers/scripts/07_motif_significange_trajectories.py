@@ -5,7 +5,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
-from scipy.stats import fisher_exact
+from scipy.stats import norm, linregress
+from statsmodels.stats.multitest import fdrcorrection
 
 # Set font to Helvetica with Arial fallback, and ensure SVG text is editable
 plt.rcParams["font.family"] = ['Helvetica', 'Arial']
@@ -33,15 +34,21 @@ def load_and_process_files(input_dir, output_dir, model_type=None):
     all_data = []
     for fname in sorted(os.listdir(input_dir)):
         # Detect model type from filename
-        is_uniform = fname.endswith("upsetplot_uniform.csv")
-        is_region_specific = fname.endswith("upsetplot_region_specific.csv")
-        is_backward_compat = fname.endswith("upsetplot.csv") and not is_uniform and not is_region_specific
+        all_models = ['uniform', 'region_specific', 'correlated', 'empirical', 'smoothed_empirical', 
+                      'max_entropy', 'hierarchical_correlations', 'negative_binomial', 'zero_inflated',
+                      'bayesian_hierarchical', 'ml_nonparametric', 'proportional_effectsize']
+        
+        detected_model = None
+        for m in all_models:
+            if fname.endswith(f"upsetplot_{m}.csv"):
+                detected_model = m
+                break
+        
+        is_backward_compat = fname.endswith("upsetplot.csv") and detected_model is None
         
         # Filter by model type if specified
         if model_type:
-            if model_type == 'uniform' and not is_uniform:
-                continue
-            elif model_type == 'region_specific' and not is_region_specific:
+            if detected_model != model_type:
                 continue
         elif is_backward_compat:
             # If no model_type specified, skip backward compat files if model-specific files exist
@@ -66,39 +73,182 @@ def load_and_process_files(input_dir, output_dir, model_type=None):
     combined_df.to_csv(os.path.join(output_dir, output_filename), index=False)
     return combined_df
 
-def compute_transition_significance(df, stage_order, output_dir):
+def _se_effect_size(obs):
+    """SE of effect size d = log2(obs/exp), treating expected as fixed: SE(d) = 1/(ln(2)*sqrt(obs))."""
+    if obs is None or pd.isna(obs) or obs <= 0:
+        return np.nan
+    return 1.0 / (np.log(2) * np.sqrt(float(obs)))
+
+
+def compute_transition_significance(df, stage_order, output_dir, use_fdr_for_significant=False):
+    """
+    Test whether effect size changed significantly between consecutive stages (z-test on difference).
+    Writes transition_significance.csv with Motif, Transition, P-value, Significant, Delta_Effect_Size, SE_delta, P_value_adjusted.
+    If use_fdr_for_significant is True, Significant is set from FDR-adjusted p <= 0.05; otherwise from raw p <= 0.05.
+    """
     rows = []
-    totals = df.groupby("Stage")["Observed"].sum().to_dict()
     for motif in df["Motif_Label"].unique():
         motif_data = df[df["Motif_Label"] == motif].set_index("Stage")
+        motif_pvals = []
         for i in range(len(stage_order) - 1):
             s1, s2 = stage_order[i], stage_order[i + 1]
-            if s1 in motif_data.index and s2 in motif_data.index:
-                a = motif_data.loc[s1, "Observed"]
-                b = totals[s1] - a
-                c = motif_data.loc[s2, "Observed"]
-                d = totals[s2] - c
-                _, p = fisher_exact([[a, b], [c, d]])
+            delta_d = np.nan
+            se_delta = np.nan
+            p = np.nan
+            if s1 not in motif_data.index or s2 not in motif_data.index:
                 rows.append({
                     "Motif": motif,
                     "Transition": f"{s1}_to_{s2}",
                     "P-value": p,
-                    "Significant": p <= 0.05
+                    "Significant": False,
+                    "Delta_Effect_Size": delta_d,
+                    "SE_delta": se_delta,
+                    "P_value_adjusted": np.nan,
                 })
+                continue
+            d1 = motif_data.loc[s1, "Effect Size"]
+            d2 = motif_data.loc[s2, "Effect Size"]
+            obs1 = motif_data.loc[s1, "Observed"]
+            obs2 = motif_data.loc[s2, "Observed"]
+            if pd.isna(d1) or pd.isna(d2) or obs1 is None or obs2 is None or obs1 <= 0 or obs2 <= 0:
+                pass
             else:
-                rows.append({
-                    "Motif": motif,
-                    "Transition": f"{s1}_to_{s2}",
-                    "P-value": None,
-                    "Significant": False
-                })
+                obs1, obs2 = int(obs1), int(obs2)
+                se1 = _se_effect_size(obs1)
+                se2 = _se_effect_size(obs2)
+                delta_d = float(d2) - float(d1)
+                se_delta = np.sqrt(se1**2 + se2**2)
+                z = delta_d / se_delta if se_delta > 0 else 0
+                p = 2 * (1 - norm.cdf(np.abs(z)))
+            rows.append({
+                "Motif": motif,
+                "Transition": f"{s1}_to_{s2}",
+                "P-value": p,
+                "Significant": bool(p <= 0.05) if not pd.isna(p) else False,
+                "Delta_Effect_Size": delta_d,
+                "SE_delta": se_delta,
+                "P_value_adjusted": np.nan,
+            })
+            if not pd.isna(p):
+                motif_pvals.append((len(rows) - 1, p))
+        # FDR within motif (3 transitions)
+        if motif_pvals:
+            indices = [idx for idx, _ in motif_pvals]
+            pvals = [p for _, p in motif_pvals]
+            try:
+                _, p_adj = fdrcorrection(pvals, alpha=0.05)
+                for k, idx in enumerate(indices):
+                    rows[idx]["P_value_adjusted"] = p_adj[k]
+                    if use_fdr_for_significant:
+                        rows[idx]["Significant"] = bool(p_adj[k] <= 0.05) if not pd.isna(p_adj[k]) else False
+            except Exception:
+                pass
     df_out = pd.DataFrame(rows)
+    # Ensure column order for compatibility
+    cols = ["Motif", "Transition", "P-value", "Significant", "Delta_Effect_Size", "SE_delta", "P_value_adjusted"]
+    df_out = df_out[[c for c in cols if c in df_out.columns]]
     df_out.to_csv(os.path.join(output_dir, "transition_significance.csv"), index=False)
     return df_out
 
-def plot_motif_set(df, stage_order, trans_sig_df, motifs, output_pdf_path, output_dir, prefix=""):
-    global_ymin = df["Effect Size"].min() - 0.5
-    global_ymax = df["Effect Size"].max() + 0.5
+
+def compute_motif_trajectory_summary(df, stage_order, output_dir, include_exploratory_trend_p=False):
+    """
+    Compute per-motif trajectory statistics: trend, total change P3->P60, N_stages_significant.
+    Writes motif_trajectory_summary.csv (one row per motif).
+    
+    NOTE: The trend p-value from linear regression is EXPLORATORY ONLY due to very low
+    statistical power with only n=4 observations per motif. It should not be used for
+    formal hypothesis testing. Set include_exploratory_trend_p=True to include it in output.
+    
+    NOTE: Kruskal-Wallis test was removed because it is statistically invalid with n=1
+    observation per group (each stage has only one effect size value per motif).
+    """
+    summary_rows = []
+    stage_idx = {s: i for i, s in enumerate(stage_order)}
+    for motif in df["Motif_Label"].unique():
+        motif_data = df[df["Motif_Label"] == motif].set_index("Stage").reindex(stage_order)
+        effect_sizes = motif_data["Effect Size"].values
+        observed = motif_data["Observed"].values
+        significant = motif_data["Significant"].fillna(False).values
+
+        # Trend: regress Effect Size on stage index (1, 2, 3, 4)
+        # NOTE: This is EXPLORATORY due to very low power with n=4 points.
+        # The p-value should NOT be used for formal hypothesis testing.
+        valid = ~pd.isna(effect_sizes)
+        n_valid = np.sum(valid)
+        trend_slope = np.nan
+        trend_p_exploratory = np.nan  # Renamed to emphasize exploratory nature
+        trend_direction = "none"
+        if n_valid >= 2:
+            x = np.array([stage_idx[s] + 1 for s in stage_order])[valid]
+            y = effect_sizes[valid].astype(float)
+            try:
+                res = linregress(x, y)
+                trend_slope = res.slope
+                trend_p_exploratory = res.pvalue  # EXPLORATORY ONLY - low power with n=4
+                trend_direction = "increasing" if trend_slope > 0 else ("decreasing" if trend_slope < 0 else "none")
+            except Exception:
+                pass
+
+        # NOTE: Kruskal-Wallis test was REMOVED (previously global_change_p).
+        # Reason: The test requires multiple observations per group, but we have
+        # only n=1 effect size value per stage per motif. With n=1 per group,
+        # there is no within-group variance to test against, making the test
+        # statistically invalid. See: Kruskal & Wallis (1952), JASA.
+
+        # Total change P3 -> P60
+        delta_p3_p60 = np.nan
+        delta_se = np.nan
+        delta_ci_lower = np.nan
+        delta_ci_upper = np.nan
+        delta_p = np.nan
+        if "P3" in stage_order and "P60" in stage_order and "P3" in motif_data.index and "P60" in motif_data.index:
+            d_p3 = motif_data.loc["P3", "Effect Size"]
+            d_p60 = motif_data.loc["P60", "Effect Size"]
+            obs_p3 = motif_data.loc["P3", "Observed"]
+            obs_p60 = motif_data.loc["P60", "Observed"]
+            if not pd.isna(d_p3) and not pd.isna(d_p60) and obs_p3 and obs_p60 and obs_p3 > 0 and obs_p60 > 0:
+                se_p3 = _se_effect_size(int(obs_p3))
+                se_p60 = _se_effect_size(int(obs_p60))
+                delta_p3_p60 = float(d_p60) - float(d_p3)
+                delta_se = np.sqrt(se_p3**2 + se_p60**2)
+                if delta_se > 0:
+                    z = delta_p3_p60 / delta_se
+                    delta_p = 2 * (1 - norm.cdf(np.abs(z)))
+                delta_ci_lower = delta_p3_p60 - 1.96 * delta_se if not pd.isna(delta_se) else np.nan
+                delta_ci_upper = delta_p3_p60 + 1.96 * delta_se if not pd.isna(delta_se) else np.nan
+
+        # N_stages_significant
+        n_stages_significant = int(np.sum(significant))
+
+        # Build summary row
+        row = {
+            "Motif": motif,
+            "trend_slope": trend_slope,
+            "trend_direction": trend_direction,
+            "Delta_P3_to_P60": delta_p3_p60,
+            "Delta_P3_to_P60_SE": delta_se,
+            "Delta_P3_to_P60_CI_lower": delta_ci_lower,
+            "Delta_P3_to_P60_CI_upper": delta_ci_upper,
+            "Delta_P3_to_P60_p": delta_p,
+            "N_stages_significant": n_stages_significant,
+        }
+        # Only include exploratory trend p-value if explicitly requested
+        if include_exploratory_trend_p:
+            row["trend_p_EXPLORATORY"] = trend_p_exploratory
+        summary_rows.append(row)
+    df_summary = pd.DataFrame(summary_rows)
+    df_summary.to_csv(os.path.join(output_dir, "motif_trajectory_summary.csv"), index=False)
+    return df_summary
+
+
+def plot_motif_set(df, stage_order, trans_sig_df, motifs, output_pdf_path, output_dir, prefix="", unified_ymin=None, unified_ymax=None):
+    if unified_ymin is not None and unified_ymax is not None:
+        global_ymin = unified_ymin
+        global_ymax = unified_ymax
+    else:
+        global_ymin = df["Effect Size"].min() - 0.5
+        global_ymax = df["Effect Size"].max() + 0.5
     stage_to_x = {s: i for i, s in enumerate(stage_order)}
     x_numeric = np.arange(len(stage_order))
 
@@ -111,8 +261,14 @@ def plot_motif_set(df, stage_order, trans_sig_df, motifs, output_pdf_path, outpu
             if np.all(pd.isna(y)):
                 continue
 
+            # Per-stage 95% CI for effect size (SE = 1.44/sqrt(obs)); draw error bars
+            obs = motif_data["Observed"].reindex(stage_order).values
+            se_arr = np.array([_se_effect_size(obs[i]) if i < len(obs) and obs[i] is not None and not pd.isna(obs[i]) and obs[i] > 0 else np.nan for i in range(len(stage_order))])
+            yerr = np.where(np.isnan(se_arr) | (se_arr <= 0), 0, 1.96 * se_arr)
+
             fig, ax = plt.subplots(figsize=(6, 4))
-            ax.plot(x_numeric, y, linestyle='-', color='black', marker='o', markersize=6)
+            ax.errorbar(x_numeric, y, yerr=yerr, fmt='none', ecolor='gray', capsize=2, capthick=1, zorder=1)
+            ax.plot(x_numeric, y, linestyle='-', color='black', marker='o', markersize=6, zorder=2)
             for xi, yi, s in zip(x_numeric, y, sig):
                 if s:
                     ax.plot(xi, yi, marker='o', color='red', markersize=8)
@@ -155,8 +311,47 @@ def plot_motif_set(df, stage_order, trans_sig_df, motifs, output_pdf_path, outpu
             fig.savefig(svg_path, format='svg')
             plt.close(fig)
 
-def plot_motif_trajectories(df, stage_order, output_dir):
-    trans_sig_df = compute_transition_significance(df, stage_order, output_dir)
+def calculate_unified_yaxis_range(input_dir, models_to_process):
+    """
+    Calculate unified y-axis range across all models.
+    
+    Args:
+        input_dir: Directory containing upsetplot CSV files
+        models_to_process: List of model types to process
+    
+    Returns:
+        unified_ymin, unified_ymax: Unified y-axis range (rounded to multiple of 5)
+    """
+    all_effect_sizes = []
+    
+    for model_type in models_to_process:
+        # Load all upsetplot files for this model
+        for fname in sorted(os.listdir(input_dir)):
+            if fname.endswith(f"upsetplot_{model_type}.csv"):
+                fpath = os.path.join(input_dir, fname)
+                try:
+                    df = pd.read_csv(fpath)
+                    if "Effect Size" in df.columns:
+                        all_effect_sizes.extend(df["Effect Size"].dropna().tolist())
+                except Exception as e:
+                    print(f"Warning: Could not read {fpath}: {e}")
+                    continue
+    
+    if not all_effect_sizes:
+        return None, None
+    
+    global_min = min(all_effect_sizes)
+    global_max = max(all_effect_sizes)
+    max_abs = max(abs(global_min), abs(global_max))
+    
+    # Round up to next multiple of 5
+    unified_range = ((int(max_abs) // 5) + 1) * 5
+    
+    return -unified_range, unified_range
+
+def plot_motif_trajectories(df, stage_order, output_dir, unified_ymin=None, unified_ymax=None, use_fdr_for_significant=False, include_exploratory_trend_p=False):
+    trans_sig_df = compute_transition_significance(df, stage_order, output_dir, use_fdr_for_significant=use_fdr_for_significant)
+    compute_motif_trajectory_summary(df, stage_order, output_dir, include_exploratory_trend_p=include_exploratory_trend_p)
     motif_stage_counts = df.groupby("Motif_Label")["Stage"].nunique()
     full_motifs = motif_stage_counts[motif_stage_counts == len(stage_order)].index
     partial_motifs = motif_stage_counts[motif_stage_counts < len(stage_order)].index
@@ -170,11 +365,11 @@ def plot_motif_trajectories(df, stage_order, output_dir):
 
     # Full motif plots
     pdf_full = os.path.join(output_dir, "motif_effect_trajectories.pdf")
-    plot_motif_set(df, stage_order, trans_sig_df, sorted_full_motifs, pdf_full, output_dir)
+    plot_motif_set(df, stage_order, trans_sig_df, sorted_full_motifs, pdf_full, output_dir, unified_ymin=unified_ymin, unified_ymax=unified_ymax)
 
     # Partial motif plots
     pdf_partial = os.path.join(output_dir, "motif_effect_partial_trajectories.pdf")
-    plot_motif_set(df, stage_order, trans_sig_df, partial_motifs, pdf_partial, output_dir, prefix="partial_")
+    plot_motif_set(df, stage_order, trans_sig_df, partial_motifs, pdf_partial, output_dir, prefix="partial_", unified_ymin=unified_ymin, unified_ymax=unified_ymax)
 
 if __name__ == "__main__":
     import argparse
@@ -183,6 +378,14 @@ if __name__ == "__main__":
     parser.add_argument("--input_dir", type=str, required=True, help="Directory containing *_upsetplot.csv files")
     parser.add_argument("--helper_output_dir", type=str, default=None,
                        help="Directory for helper script outputs (default: helpers/outputs/07_motif_significange_trajectories)")
+    parser.add_argument("--unified_yaxis", action="store_true",
+                       help="Use unified y-axis range across all models (rounded to nearest multiple of 5)")
+    parser.add_argument("--use_fdr_for_significant", action="store_true",
+                       help="Set Significant from FDR-adjusted p <= 0.05 in transition_significance.csv (default: raw p <= 0.05)")
+    parser.add_argument("--exploratory_trend_pvalue", action="store_true",
+                       help="Include exploratory trend p-value in motif_trajectory_summary.csv. "
+                            "WARNING: This p-value has very low statistical power (n=4) and should "
+                            "NOT be used for formal hypothesis testing. Slope is always included.")
     args = parser.parse_args()
 
     # Set output directory
@@ -195,8 +398,25 @@ if __name__ == "__main__":
 
     stage_order = ["P3", "P12", "P20", "P60"]
     
-    # Process both models separately
-    models_to_process = ['uniform', 'region_specific']
+    # Process all three models separately
+    models_to_process = ['uniform', 'region_specific', 'correlated', 'empirical', 'smoothed_empirical', 
+                     'max_entropy', 'hierarchical_correlations', 'negative_binomial', 'zero_inflated',
+                     'bayesian_hierarchical', 'ml_nonparametric', 'proportional_effectsize']
+    
+    # Calculate unified y-axis range if requested
+    unified_ymin = None
+    unified_ymax = None
+    if args.unified_yaxis:
+        print("\n" + "="*80)
+        print("Calculating unified y-axis range across all models...")
+        print("="*80)
+        unified_ymin, unified_ymax = calculate_unified_yaxis_range(args.input_dir, models_to_process)
+        if unified_ymin is not None and unified_ymax is not None:
+            print(f"✅ Unified y-axis range: [{unified_ymin}, {unified_ymax}]")
+        else:
+            print("⚠️ Warning: Could not calculate unified range, using per-model ranges")
+            unified_ymin = None
+            unified_ymax = None
     
     for model_type in models_to_process:
         print("\n" + "="*80)
@@ -213,7 +433,7 @@ if __name__ == "__main__":
             print(f"Warning: No data found for {model_type} model")
             continue
         
-        plot_motif_trajectories(df_all, stage_order, str(model_output_dir))
+        plot_motif_trajectories(df_all, stage_order, str(model_output_dir), unified_ymin=unified_ymin, unified_ymax=unified_ymax, use_fdr_for_significant=args.use_fdr_for_significant, include_exploratory_trend_p=args.exploratory_trend_pvalue)
         print(f"✅ Completed processing for {model_type} model")
     
     print(f"\n📁 All results saved to: {base_output_dir}")

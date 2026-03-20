@@ -249,3 +249,5 @@ class PipelineExecutor:
             'is_paused': self.is_paused,
             'current_command': self.current_command,
         }
+
+

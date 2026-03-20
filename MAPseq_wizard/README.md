@@ -45,3 +45,5 @@ The wizard saves configurations as YAML files. You can:
 5. **QC & Figures** - Configure quality control and figure generation
 6. **Review & Generate** - Review configuration and generate command files
 7. **Execute** - Run the pipeline with progress monitoring
+
+

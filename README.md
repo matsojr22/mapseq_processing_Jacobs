@@ -290,9 +290,10 @@ After main processing, run helper scripts in numerical order:
 Run scripts individually in the order listed above.
 
 **Option 2: Batch Execution**
-Use `run_commands.sh` to execute all commands from `all_commands.txt`:
+Use `run_commands.sh` to execute all commands from `all_commands.txt`. Make the script executable once, then run it:
 ```bash
-bash run_commands.sh
+chmod +x run_commands.sh
+./run_commands.sh
 ```
 
 **Option 3: GUI**
@@ -386,10 +387,10 @@ python scripts/02_projection_analysis.py
 # ... etc
 ```
 
-For convenience, you can use the `all_commands.txt` or `all_commands_all-parameters.txt` file which contains all commands in the correct order. You can run it using:
+For convenience, you can use the `all_commands.txt` or `all_commands_all-parameters.txt` file which contains all commands in the correct order. Make the script executable once (`chmod +x run_commands.sh`), then run:
 
 ```bash
-bash run_commands.sh
+./run_commands.sh
 ```
 
 Or manually execute commands from `all_commands.txt`.
@@ -407,7 +408,8 @@ Batch execution script that runs all commands from a command file sequentially w
 
 **Usage:**
 ```bash
-bash run_commands.sh
+chmod +x run_commands.sh   # one-time, if needed
+./run_commands.sh
 ```
 
 **Features:**
@@ -423,11 +425,13 @@ bash run_commands.sh
 **Example:**
 ```bash
 # From repository root
-bash run_commands.sh
+chmod +x run_commands.sh   # one-time, if needed
+./run_commands.sh
 
 # Or from bash directory
 cd bash
-bash run_commands.sh
+chmod +x run_commands.sh
+./run_commands.sh
 ```
 
 **Note:** The script will continue executing even if individual commands fail. Check the log file to identify any failures. The script is identical in both the root directory and `bash/` subdirectory.

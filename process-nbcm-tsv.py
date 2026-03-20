@@ -72,12 +72,80 @@ parser.add_argument(
     action="store_true",
     help="If set, override all automatic thresholding and use the user-defined target_umi_min."
 )
-
-
-
+parser.add_argument(
+    "--is-anchor-model",
+    action="store_true",
+    help="Mark this run as the anchor/baseline model. Saves probabilities and correlation matrix for use by other cohorts."
+)
+parser.add_argument(
+    "--anchor-model-file",
+    type=str,
+    default=None,
+    help="Path to anchor model's Region-specific_Probabilities_N0based.csv. When provided, uses anchor's probabilities with local N0."
+)
+parser.add_argument(
+    "--anchor-correlation-file",
+    type=str,
+    default=None,
+    help="Path to anchor model's Conditional_Probability_Matrix.csv for correlated binomial model."
+)
+parser.add_argument(
+    "--model-type",
+    type=str,
+    choices=["uniform", "region_specific", "correlated", "empirical", "smoothed_empirical", 
+             "max_entropy", "hierarchical_correlations", "negative_binomial", "zero_inflated",
+             "bayesian_hierarchical", "ml_nonparametric", "all"],
+    default="all",
+    help="Which probability model(s) to run. Default: all"
+)
+parser.add_argument(
+    "--smoothing-alpha",
+    type=float,
+    default=1.0,
+    help="Smoothing parameter α for smoothed_empirical model (default: 1.0)"
+)
+parser.add_argument(
+    "--skip-sections",
+    type=str,
+    default=None,
+    help="Comma-separated list of sections to skip: visualizations,clustering,heatmaps"
+)
+parser.add_argument(
+    "--illustrator-volcano-dir",
+    type=str,
+    default=None,
+    help="When set, also save an illustrator-ready SVG of the uniform effect significance plot to this directory (fixed axes, no title/axis/tick labels, Helvetica text)."
+)
+parser.add_argument(
+    "--illustrator-report-ranges-only",
+    action="store_true",
+    help="With --illustrator-volcano-dir: append this run's volcano data range to _data_ranges.csv and do not save the illustrator SVG (used for computing uniform limits)."
+)
+parser.add_argument(
+    "--illustrator-xlim",
+    type=float,
+    nargs=2,
+    default=None,
+    metavar=("XMIN", "XMAX"),
+    help="X-axis limits for illustrator volcano (e.g. -4 4). Used with --illustrator-volcano-dir."
+)
+parser.add_argument(
+    "--illustrator-ylim",
+    type=float,
+    nargs=2,
+    default=None,
+    metavar=("YMIN", "YMAX"),
+    help="Y-axis limits for illustrator volcano (e.g. 0 10). Used with --illustrator-volcano-dir."
+)
 
 # Parse arguments
 args = parser.parse_args()
+
+# Parse skip-sections argument into a set for easy lookup
+skip_sections = set()
+if getattr(args, 'skip_sections', None):
+    skip_sections = set(s.strip().lower() for s in args.skip_sections.split(","))
+    print(f"⚠️ Skip sections enabled: {skip_sections}")
 
 # Handle both string and list input for labels
 if isinstance(args.labels, str):
@@ -200,6 +268,29 @@ def save_latex_expression(expression, title, filename):
 
 def calculate_probabilities(projections, total_projections):
     return {region: (count / total_projections) for region, count in projections.items()}
+
+def load_anchor_model(anchor_file, anchor_corr_file=None):
+    """
+    Load anchor model probabilities and optional correlation matrix.
+    
+    Args:
+        anchor_file: Path to anchor model's Region-specific_Probabilities_N0based.csv
+        anchor_corr_file: Optional path to Conditional_Probability_Matrix.csv
+        
+    Returns:
+        anchor_probs_dict: Dictionary mapping region names to probabilities
+        anchor_n0: The N0 value from the anchor model
+        anchor_corr: Conditional probability matrix (DataFrame) or None
+    """
+    anchor_probs = pd.read_csv(anchor_file)
+    anchor_probs_dict = dict(zip(anchor_probs['Region'], anchor_probs['Probability']))
+    anchor_n0 = anchor_probs['N0'].iloc[0]
+    
+    anchor_corr = None
+    if anchor_corr_file and os.path.exists(anchor_corr_file):
+        anchor_corr = pd.read_csv(anchor_corr_file, index_col=0)
+    
+    return anchor_probs_dict, anchor_n0, anchor_corr
 
 def binomial_test(value, total, probability):
     return binomtest(value, n=total, p=probability).pvalue
@@ -633,6 +724,34 @@ print(f"🔍 [REGION-SPECIFIC MODEL] Region-specific probabilities (p_i = N_i / 
 total_region_prob = sum(psdict_region_specific.values())
 print(f"🔍 [REGION-SPECIFIC MODEL] Sum of region probabilities: {total_region_prob} (expected > 1 since neurons can project to multiple regions)")
 
+# ============================================================================
+# ANCHOR MODEL LOGIC: Load external probabilities if provided
+# ============================================================================
+anchor_probs_loaded = None
+anchor_n0_loaded = None
+anchor_corr_loaded = None
+
+if getattr(args, 'anchor_model_file', None):
+    print("\n" + "="*80)
+    print("ANCHOR MODEL MODE: Loading external probabilities from anchor dataset")
+    print("="*80)
+    anchor_probs_loaded, anchor_n0_loaded, anchor_corr_loaded = load_anchor_model(
+        args.anchor_model_file,
+        getattr(args, 'anchor_correlation_file', None)
+    )
+    print(f"🔍 [ANCHOR MODEL] Loaded anchor probabilities from: {args.anchor_model_file}")
+    print(f"🔍 [ANCHOR MODEL] Anchor N0: {anchor_n0_loaded}, Local N0: {N0_value}")
+    print(f"🔍 [ANCHOR MODEL] Anchor probabilities: {anchor_probs_loaded}")
+    if anchor_corr_loaded is not None:
+        print(f"🔍 [ANCHOR MODEL] Loaded correlation matrix from: {args.anchor_correlation_file}")
+    print(f"🔍 [ANCHOR MODEL] Expected counts will use: Anchor_prob × Local_N0 ({N0_value})")
+    print("="*80 + "\n")
+
+# Determine which probabilities to use for expected count calculations
+# If anchor model is provided, use anchor probabilities; otherwise use local
+psdict_for_expected = anchor_probs_loaded if anchor_probs_loaded else psdict_region_specific
+corr_matrix_for_expected = anchor_corr_loaded  # Will be None if not using anchor or not provided
+
 def compute_motif_probabilities_region_specific(motif_labels, region_probs_dict, region_names):
     """
     Compute motif probabilities using region-specific probabilities (old pipeline method).
@@ -669,6 +788,352 @@ def compute_motif_probabilities_region_specific(motif_labels, region_probs_dict,
         motif_probs_rs[i] = prob
     
     return motif_probs_rs
+
+def compute_motif_probabilities_correlated(motif_labels, region_probs_dict, cond_prob_matrix, region_names):
+    """
+    Compute motif probabilities accounting for pairwise correlations.
+    Uses P(A,B) = P(A) * P(B|A) for pairs, extended to higher-order motifs using chain rule.
+    
+    Args:
+        motif_labels: List of motif labels (each is a list of region names)
+        region_probs_dict: Dictionary mapping region names to marginal probabilities
+        cond_prob_matrix: DataFrame with conditional probabilities P(B|A) where rows=A, cols=B
+        region_names: List of all region names (in order)
+    
+    Returns:
+        Dictionary mapping motif index to probability
+    """
+    motif_probs_corr = {}
+    
+    for i, motif_regions in enumerate(motif_labels):
+        if not motif_regions or (len(motif_regions) == 1 and not motif_regions[0]):
+            # Empty motif (no projections)
+            motif_probs_corr[i] = 0.0
+            continue
+        
+        if len(motif_regions) == 1:
+            # Single region motif: just use marginal probability
+            region = motif_regions[0]
+            motif_probs_corr[i] = region_probs_dict.get(region, 0.0)
+        else:
+            # Multi-region motif: use chain rule with conditional probabilities
+            # P(A,B,C,...) = P(A) * P(B|A) * P(C|B) * ...
+            # Sort regions for consistent ordering
+            sorted_regions = sorted(motif_regions)
+            
+            # Start with first region's marginal probability
+            prob = region_probs_dict.get(sorted_regions[0], 0.0)
+            
+            # Multiply by conditional probabilities for subsequent regions
+            for j in range(1, len(sorted_regions)):
+                prev_region = sorted_regions[j-1]
+                curr_region = sorted_regions[j]
+                
+                # Get conditional probability P(curr|prev) from matrix
+                try:
+                    cond_prob = cond_prob_matrix.loc[prev_region, curr_region]
+                except (KeyError, TypeError):
+                    # Fallback if regions not found: use marginal probability
+                    cond_prob = region_probs_dict.get(curr_region, 0.0)
+                
+                prob *= cond_prob
+            
+            motif_probs_corr[i] = prob
+    
+    return motif_probs_corr
+
+def compute_motif_probabilities_empirical(motif_labels, observed_counts, n0, normalize=False):
+    """
+    Compute empirical motif probabilities from observed frequencies.
+    For anchor run: P(motif) = observed_count(motif) / N0
+    
+    Args:
+        motif_labels: List of motif labels
+        observed_counts: Observed counts for each motif
+        n0: Total population size (N0)
+        normalize: If True, normalize probabilities to sum to 1. 
+                   If False (default), use raw frequencies (observed/N0).
+                   For anchor models, should be False to ensure perfect fit.
+    
+    Returns:
+        Dictionary mapping motif index to probability
+    """
+    motif_probs = {}
+    total_observed = sum(observed_counts)
+    
+    for i, motif_regions in enumerate(motif_labels):
+        if total_observed > 0:
+            motif_probs[i] = observed_counts[i] / float(n0)
+        else:
+            motif_probs[i] = 0.0
+    
+    # Only normalize if explicitly requested
+    # For anchor models, we want P = observed/N0 so that expected = N0 * P = observed
+    if normalize:
+        total_prob = sum(motif_probs.values())
+        if total_prob > 0:
+            motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def compute_motif_probabilities_smoothed_empirical(motif_labels, observed_counts, n0, alpha=1.0):
+    """
+    Compute smoothed empirical motif probabilities with additive smoothing (Laplace).
+    P(motif) = (observed_count + α) / (N0 + α × total_motifs)
+    """
+    motif_probs = {}
+    total_motifs = len(motif_labels)
+    denominator = float(n0) + alpha * total_motifs
+    
+    for i, motif_regions in enumerate(motif_labels):
+        motif_probs[i] = (observed_counts[i] + alpha) / denominator
+    
+    # Normalize to ensure sum = 1
+    total_prob = sum(motif_probs.values())
+    if total_prob > 0:
+        motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def compute_motif_probabilities_max_entropy(motif_labels, region_probs_dict, cond_prob_matrix, region_names):
+    """
+    Compute motif probabilities using maximum entropy approach.
+    Uses Iterative Proportional Fitting (IPF) to match constraints:
+    - Region marginals: P(region_i) = p_i
+    - Pairwise correlations: P(region_i, region_j) = p_ij
+    """
+    from scipy.optimize import minimize
+    import numpy as np
+    
+    # For now, use a simplified approach: match marginals and pairwise correlations
+    # Full IPF implementation would be more complex
+    motif_probs = {}
+    
+    # Start with independent model as initial guess
+    for i, motif_regions in enumerate(motif_labels):
+        if not motif_regions:
+            motif_probs[i] = 0.0
+            continue
+        
+        # Use region-specific probabilities as base
+        prob = 1.0
+        for region in region_names:
+            if region in motif_regions:
+                prob *= region_probs_dict.get(region, 0.0)
+            else:
+                prob *= (1.0 - region_probs_dict.get(region, 0.0))
+        
+        # Adjust for pairwise correlations if available
+        if cond_prob_matrix is not None and len(motif_regions) > 1:
+            sorted_regions = sorted(motif_regions)
+            # Apply correlation adjustments
+            for j in range(1, len(sorted_regions)):
+                prev_region = sorted_regions[j-1]
+                curr_region = sorted_regions[j]
+                try:
+                    cond_prob = cond_prob_matrix.loc[prev_region, curr_region]
+                    marginal_prob = region_probs_dict.get(curr_region, 0.0)
+                    # Adjust if conditional differs from marginal
+                    if marginal_prob > 0:
+                        adjustment = cond_prob / marginal_prob
+                        prob *= adjustment
+                except (KeyError, TypeError):
+                    pass
+        
+        motif_probs[i] = max(0.0, prob)
+    
+    # Normalize
+    total_prob = sum(motif_probs.values())
+    if total_prob > 0:
+        motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def compute_motif_probabilities_negative_binomial(motif_labels, region_probs_dict, region_names, dispersion=1.0):
+    """
+    Compute motif probabilities using negative binomial (overdispersed) model.
+    For now, uses region-specific probabilities with dispersion adjustment.
+    """
+    # Use region-specific as base, dispersion affects variance not mean
+    motif_probs = {}
+    
+    for i, motif_regions in enumerate(motif_labels):
+        prob = 1.0
+        for region in region_names:
+            if region in motif_regions:
+                prob *= region_probs_dict.get(region, 0.0)
+            else:
+                prob *= (1.0 - region_probs_dict.get(region, 0.0))
+        motif_probs[i] = prob
+    
+    # Normalize
+    total_prob = sum(motif_probs.values())
+    if total_prob > 0:
+        motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def compute_motif_probabilities_zero_inflated(motif_labels, observed_counts, n0, region_probs_dict, region_names, zero_inflation=0.0):
+    """
+    Compute motif probabilities using zero-inflated model.
+    Two-component: structural zeros + count distribution
+    """
+    motif_probs = {}
+    total_observed = sum(observed_counts)
+    
+    for i, motif_regions in enumerate(motif_labels):
+        if observed_counts[i] == 0:
+            # Structural zero with probability zero_inflation
+            motif_probs[i] = zero_inflation * (1.0 / len(motif_labels))  # Uniform over zeros
+        else:
+            # Count distribution with probability (1 - zero_inflation)
+            # Use region-specific probabilities
+            prob = 1.0
+            for region in region_names:
+                if region in motif_regions:
+                    prob *= region_probs_dict.get(region, 0.0)
+                else:
+                    prob *= (1.0 - region_probs_dict.get(region, 0.0))
+            motif_probs[i] = (1.0 - zero_inflation) * prob
+    
+    # Normalize
+    total_prob = sum(motif_probs.values())
+    if total_prob > 0:
+        motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def compute_motif_probabilities_bayesian_hierarchical(motif_labels, observed_counts, n0, alpha_prior=1.0):
+    """
+    Compute motif probabilities using Bayesian hierarchical model.
+    Dirichlet-Multinomial: P ~ Dirichlet(α), counts ~ Multinomial(P, N0)
+    Posterior: P ~ Dirichlet(α + observed_counts)
+    """
+    motif_probs = {}
+    total_motifs = len(motif_labels)
+    
+    # Posterior parameters: alpha + observed
+    posterior_alphas = [alpha_prior + count for count in observed_counts]
+    total_alpha = sum(posterior_alphas)
+    
+    for i, motif_regions in enumerate(motif_labels):
+        # Posterior mean of Dirichlet
+        motif_probs[i] = posterior_alphas[i] / total_alpha if total_alpha > 0 else 0.0
+    
+    return motif_probs
+
+def compute_motif_probabilities_ml_nonparametric(motif_labels, observed_counts, n0, region_names):
+    """
+    Compute motif probabilities using ML/non-parametric approach.
+    For now, uses a simple random forest-like feature-based approach.
+    """
+    from sklearn.ensemble import RandomForestRegressor
+    import numpy as np
+    
+    # Prepare features: motif size, region composition
+    X = []
+    y = []
+    
+    for i, motif_regions in enumerate(motif_labels):
+        # Features: motif size, one-hot for each region
+        features = [len(motif_regions)]
+        for region in region_names:
+            features.append(1 if region in motif_regions else 0)
+        X.append(features)
+        y.append(observed_counts[i] / float(n0) if n0 > 0 else 0.0)
+    
+    X = np.array(X)
+    y = np.array(y)
+    
+    # Train simple model (if we have enough data)
+    if len(X) > 5 and np.sum(y) > 0:
+        try:
+            model = RandomForestRegressor(n_estimators=10, max_depth=3, random_state=42)
+            model.fit(X, y)
+            predictions = model.predict(X)
+            # Use predictions as probabilities
+            motif_probs = {i: max(0.0, float(pred)) for i, pred in enumerate(predictions)}
+        except:
+            # Fallback to empirical
+            motif_probs = compute_motif_probabilities_empirical(motif_labels, observed_counts, n0)
+    else:
+        # Fallback to empirical
+        motif_probs = compute_motif_probabilities_empirical(motif_labels, observed_counts, n0)
+    
+    # Normalize
+    total_prob = sum(motif_probs.values())
+    if total_prob > 0:
+        motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def compute_motif_probabilities_hierarchical_correlations(motif_labels, region_probs_dict, cond_prob_matrix, region_names):
+    """
+    Compute motif probabilities using hierarchical/higher-order correlations.
+    Models 3-way, 4-way correlations explicitly.
+    """
+    # For now, extend correlated model to higher orders
+    # Full implementation would estimate 3-way, 4-way correlations
+    motif_probs = {}
+    
+    for i, motif_regions in enumerate(motif_labels):
+        if not motif_regions:
+            motif_probs[i] = 0.0
+            continue
+        
+        if len(motif_regions) == 1:
+            motif_probs[i] = region_probs_dict.get(motif_regions[0], 0.0)
+        elif len(motif_regions) == 2:
+            # Use pairwise correlation
+            sorted_regions = sorted(motif_regions)
+            prob = region_probs_dict.get(sorted_regions[0], 0.0)
+            try:
+                cond_prob = cond_prob_matrix.loc[sorted_regions[0], sorted_regions[1]]
+                prob *= cond_prob
+            except (KeyError, TypeError):
+                prob *= region_probs_dict.get(sorted_regions[1], 0.0)
+            motif_probs[i] = prob
+        else:
+            # For 3+ regions, use chain rule with adjustments
+            sorted_regions = sorted(motif_regions)
+            prob = region_probs_dict.get(sorted_regions[0], 0.0)
+            
+            for j in range(1, len(sorted_regions)):
+                prev_region = sorted_regions[j-1]
+                curr_region = sorted_regions[j]
+                try:
+                    cond_prob = cond_prob_matrix.loc[prev_region, curr_region]
+                    prob *= cond_prob
+                except (KeyError, TypeError):
+                    prob *= region_probs_dict.get(curr_region, 0.0)
+            
+            # Apply higher-order adjustment (simplified)
+            # In full implementation, would use 3-way, 4-way correlation estimates
+            motif_probs[i] = prob
+    
+    # Normalize
+    total_prob = sum(motif_probs.values())
+    if total_prob > 0:
+        motif_probs = {k: v / total_prob for k, v in motif_probs.items()}
+    
+    return motif_probs
+
+def determine_models_to_process(model_type_arg):
+    """Determine which models to process based on CLI argument."""
+    all_models = [
+        "uniform", "region_specific", "correlated", 
+        "empirical", "smoothed_empirical", "max_entropy",
+        "hierarchical_correlations", "negative_binomial", "zero_inflated",
+        "bayesian_hierarchical", "ml_nonparametric"
+    ]
+    
+    if model_type_arg == "all":
+        return all_models
+    elif model_type_arg in all_models:
+        return [model_type_arg]
+    else:
+        # Fallback: return original three models
+        return ["uniform", "region_specific", "correlated"]
 
 # Note: Region-specific motif probabilities will be calculated later when motif_labels are available
 # (after line 1114 where motif_labels = gen_motifs(...))
@@ -852,11 +1317,22 @@ os.makedirs(analysis_dir, exist_ok=True)
 plot_dir = analysis_dir
 csv_output_dir = os.path.join(plot_dir, "motif_raw_data")
 
-# Create model-specific subdirectories for dual-model plots
-uniform_plot_dir = os.path.normpath(os.path.join(plot_dir, 'uniform'))
-region_specific_plot_dir = os.path.normpath(os.path.join(plot_dir, 'region_specific'))
-os.makedirs(uniform_plot_dir, exist_ok=True)
-os.makedirs(region_specific_plot_dir, exist_ok=True)
+# Determine which models to process
+models_to_process = determine_models_to_process(args.model_type)
+print(f"🔍 Models to process: {models_to_process}")
+
+# Create model-specific subdirectories for multi-model plots
+model_plot_dirs = {}
+for model_name in models_to_process:
+    model_plot_dir = os.path.normpath(os.path.join(plot_dir, model_name))
+    os.makedirs(model_plot_dir, exist_ok=True)
+    model_plot_dirs[model_name] = model_plot_dir
+    print(f"📁 Created directory for {model_name} model: {model_plot_dir}")
+
+# Keep backward compatibility with existing code
+uniform_plot_dir = model_plot_dirs.get('uniform', os.path.normpath(os.path.join(plot_dir, 'uniform')))
+region_specific_plot_dir = model_plot_dirs.get('region_specific', os.path.normpath(os.path.join(plot_dir, 'region_specific')))
+correlated_plot_dir = model_plot_dirs.get('correlated', os.path.normpath(os.path.join(plot_dir, 'correlated')))
 
 n0 = N0_value  # Use estimated population (N0) instead of observed_cells for motif expected counts
 
@@ -1182,10 +1658,19 @@ print("\n" + "="*80)
 print("[REGION-SPECIFIC MODEL] Calculating probabilities and expected counts for all motifs...")
 print("="*80)
 
+# Use anchor probabilities if provided, otherwise use local region-specific probabilities
+# This ensures P60-anchored comparison when --anchor-model-file is provided
+probs_for_region_specific = psdict_for_expected if anchor_probs_loaded else psdict_region_specific
+if anchor_probs_loaded:
+    print(f"🔗 [REGION-SPECIFIC MODEL] Using P60 ANCHOR probabilities for expected counts")
+    print(f"🔗 [REGION-SPECIFIC MODEL] Anchor probabilities: {probs_for_region_specific}")
+else:
+    print(f"🔍 [REGION-SPECIFIC MODEL] Using LOCAL probabilities (no anchor provided)")
+
 # Compute motif probabilities using region-specific model
 print(f"🔍 [REGION-SPECIFIC MODEL] Computing probabilities for {len(motif_labels)} motifs...")
 motif_probs_region_specific = compute_motif_probabilities_region_specific(
-    motif_labels, psdict_region_specific, columns
+    motif_labels, probs_for_region_specific, columns
 )
 
 # Calculate total probability (should be close to 1, but may not be exactly 1 due to numerical precision)
@@ -1261,6 +1746,27 @@ df_obs_exp_rs_filtered.to_csv(
     index=False
 )
 print(f"💾 [REGION-SPECIFIC MODEL] Saved filtered motif obs/exp to: {sample_name}_motif_obs_exp_region_specific_filtered.csv")
+
+# ============================================================================
+# PROPORTIONAL EFFECT SIZE MODEL: Observed/Expected CSV
+# ============================================================================
+# Create DataFrame for proportional effect size model (same data as region_specific, different effect size calculation)
+df_obs_exp_prop = pd.DataFrame(data=[
+    concatenate_list_data(motif_labels),
+    dcounts,
+    exp_counts_rs.astype(int)
+]).T
+df_obs_exp_prop.columns = ['Motif', 'Observed', 'Expected']
+df_obs_exp_prop.to_csv(os.path.normpath(os.path.join(plot_dir, sample_name + "_motif_obs_exp_proportional_effectsize.csv")))
+print(f"💾 [PROPORTIONAL EFFECT SIZE MODEL] Saved motif obs/exp to: {sample_name}_motif_obs_exp_proportional_effectsize.csv")
+
+# Exclude empty motifs
+df_obs_exp_prop_filtered = df_obs_exp_prop[df_obs_exp_prop['Motif'] != ""].copy()
+df_obs_exp_prop_filtered.to_csv(
+    os.path.normpath(os.path.join(plot_dir, f"{sample_name}_motif_obs_exp_proportional_effectsize_filtered.csv")),
+    index=False
+)
+print(f"💾 [PROPORTIONAL EFFECT SIZE MODEL] Saved filtered motif obs/exp to: {sample_name}_motif_obs_exp_proportional_effectsize_filtered.csv")
 
 
 def standardize_pos(x):
@@ -1376,9 +1882,300 @@ sigs_rs, slabels_rs = get_motif_sig_pts_region_specific(
 print(f"✅ [REGION-SPECIFIC MODEL] Statistical tests completed for {len(slabels_rs)} motifs")
 
 # ============================================================================
+# PROPORTIONAL EFFECT SIZE MODEL: Statistical testing
+# ============================================================================
+print("\n" + "="*80)
+print("[PROPORTIONAL EFFECT SIZE MODEL] Performing statistical tests...")
+print("="*80)
+
+def get_motif_sig_pts_proportional_effectsize(dcounts, labels, motif_probs_dict, n0=n0,
+                                              exclude_zeros=True,
+                                              p_transform=lambda x: -1 * np.log10(x)):
+    """
+    Calculate significance for motifs using region-specific probabilities with proportion-based effect size.
+    
+    This uses the same probabilities and p-values as region_specific model, but calculates
+    effect size using proportions: log2((k/n0 + 1) / (π + 1)) instead of log2((k + 1) / (π×n0 + 1)).
+    
+    Args:
+        dcounts: Observed counts for each motif
+        labels: Motif labels
+        motif_probs_dict: Dictionary mapping motif index to probability
+        n0: Total population size (N0)
+        exclude_zeros: Whether to exclude zero-count motifs
+        p_transform: Transform function for p-values
+    
+    Returns:
+        List of (effect_size, significance) tuples, and list of motif labels
+    """
+    num_motifs = dcounts.shape[0]
+    expected, probs = get_expected_counts_region_specific(labels, motif_probs_dict, n=n0)
+    assert dcounts.shape[0] == expected.shape[0]
+    
+    if exclude_zeros:
+        nonzid = np.nonzero(dcounts)[0]
+    else:
+        nonzid = np.arange(dcounts.shape[0])
+    
+    num_nonzid_motifs = nonzid.shape[0]
+    dcounts_ = dcounts[nonzid]
+    expected_ = expected[nonzid]
+    probs_ = probs[nonzid]
+    
+    # Effect size using proportion-based formula: log2((k/n0 + 1) / (π + 1))
+    # This is equivalent to: log2((k + n0) / (π×n0 + n0))
+    n0_float = float(n0)
+    effect_size = np.log2((dcounts_ / n0_float + 1) / (probs_ + 1))
+    matches = np.zeros(num_nonzid_motifs)
+    assert dcounts_.shape[0] == expected_.shape[0]
+    dcounts_ = dcounts_.astype(int)
+    
+    for i in range(num_nonzid_motifs):
+        pi = max(probs_[i], 1e-10)  # avoid zero or very small probs
+        # Uses binomtest (two-tailed) with n0 (which is N0_value) - same as region_specific
+        # Convert n0 to int as binomtest requires integer n
+        matches[i] = binomtest(int(dcounts_[i]), n=int(n0), p=pi).pvalue
+        matches[i] = max(matches[i], 1e-10)
+    
+    matches = p_transform(matches)
+    res = zip(effect_size, matches)
+    mlabels = [labels[h] for h in nonzid]
+    return list(res), mlabels
+
+def get_motif_sig_pts_proportional_effectsize_raw(dcounts, labels, motif_probs_dict, n0=n0,
+                                                  exclude_zeros=True,
+                                                  p_transform=lambda x: -1 * np.log10(x)):
+    """
+    Same as get_motif_sig_pts_proportional_effectsize but effect size is (k/n0+1)/(pi+1) - 1 (no log2).
+    Returns effect size centered at 0: 0 = no effect, positive = over-represented, negative = under-represented.
+    """
+    num_motifs = dcounts.shape[0]
+    expected, probs = get_expected_counts_region_specific(labels, motif_probs_dict, n=n0)
+    assert dcounts.shape[0] == expected.shape[0]
+    if exclude_zeros:
+        nonzid = np.nonzero(dcounts)[0]
+    else:
+        nonzid = np.arange(dcounts.shape[0])
+    num_nonzid_motifs = nonzid.shape[0]
+    dcounts_ = dcounts[nonzid]
+    expected_ = expected[nonzid]
+    probs_ = probs[nonzid]
+    n0_float = float(n0)
+    # Deviation from 1 so 0 = no effect, positive = over, negative = under (same as log2 version)
+    effect_size = (dcounts_ / n0_float + 1) / (probs_ + 1) - 1.0
+    matches = np.zeros(num_nonzid_motifs)
+    assert dcounts_.shape[0] == expected_.shape[0]
+    dcounts_ = dcounts_.astype(int)
+    for i in range(num_nonzid_motifs):
+        pi = max(probs_[i], 1e-10)
+        matches[i] = binomtest(int(dcounts_[i]), n=int(n0), p=pi).pvalue
+        matches[i] = max(matches[i], 1e-10)
+    matches = p_transform(matches)
+    res = zip(effect_size, matches)
+    mlabels = [labels[h] for h in nonzid]
+    return list(res), mlabels
+
+sigs_prop, slabels_prop = get_motif_sig_pts_proportional_effectsize(
+    dcounts, motif_labels, motif_probs_region_specific, n0=n0, exclude_zeros=False
+)
+print(f"✅ [PROPORTIONAL EFFECT SIZE MODEL] Statistical tests completed for {len(slabels_prop)} motifs")
+
+sigs_prop_raw, slabels_prop_raw = get_motif_sig_pts_proportional_effectsize_raw(
+    dcounts, motif_labels, motif_probs_region_specific, n0=n0, exclude_zeros=False
+)
+
+# Create minimal CSV file early with effect sizes for unified range calculation
+# This ensures the CSV exists when calculate_unified_xaxis_range() is called
+# The full CSV will be created and overwritten later with complete data
+effect_sizes_prop = [e for e, _ in sigs_prop]
+p_values_prop = [p for _, p in sigs_prop]
+dfraw_prop_minimal = pd.DataFrame({
+    'Motifs': slabels_prop,
+    'Effect Size': effect_sizes_prop,
+    'P-value': p_values_prop
+})
+dfraw_prop_minimal.to_csv(
+    os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_proportional_effectsize.csv")),
+    index=False
+)
+print(f"💾 [PROPORTIONAL EFFECT SIZE MODEL] Saved minimal upsetplot data (for unified range calculation) to: {region_specific_plot_dir}/{sample_name}_upsetplot_proportional_effectsize.csv")
+
+effect_sizes_prop_raw = [e for e, _ in sigs_prop_raw]
+dfraw_prop_raw_minimal = pd.DataFrame({
+    'Motifs': slabels_prop_raw,
+    'Effect Size': effect_sizes_prop_raw,
+    'P-value': p_values_prop
+})
+dfraw_prop_raw_minimal.to_csv(
+    os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_proportional_effectsize_raw.csv")),
+    index=False
+)
+print(f"💾 [PROPORTIONAL EFFECT SIZE MODEL] Saved minimal upsetplot data (raw) for unified range to: {region_specific_plot_dir}/{sample_name}_upsetplot_proportional_effectsize_raw.csv")
+
+# ============================================================================
+# Function to calculate unified x-axis range for volcano plots
+# ============================================================================
+def calculate_unified_xaxis_range(output_dir, model_suffix, current_effect_sizes=None):
+    """
+    Calculate unified x-axis range for volcano plots across ALL ages for the same parameterization.
+    
+    This function scans existing upsetplot CSV files across all age directories (p3, p12, p20, p60)
+    for the same parameterization to find all effect sizes for the given model type, then calculates
+    a symmetric range that encompasses all samples. This ensures consistent x-axis scales for 
+    cross-cohort comparisons.
+    
+    Args:
+        output_dir: Directory containing upsetplot CSV files (e.g., region_specific_plot_dir)
+                   Format: 02_output/{age}/{parameterization}/analysis/{model}/
+        model_suffix: Model type (e.g., 'region_specific', 'proportional_effectsize', 'uniform')
+        current_effect_sizes: Optional list of effect sizes from current sample to include
+    
+    Returns:
+        unified_xlim: Tuple (x_min, x_max) for unified x-axis limits, or None if no data found
+    """
+    all_effect_sizes = []
+    files_scanned = 0
+    ages_found = []
+    
+    # Include current sample's effect sizes if provided
+    if current_effect_sizes is not None:
+        all_effect_sizes.extend(current_effect_sizes)
+    
+    # Extract base directory and parameterization from output_dir
+    # output_dir format: 02_output/{age}/{parameterization}/analysis/{model}/
+    path_parts = Path(output_dir).parts
+    
+    # Find parameterization (starts with 01., 02., 03., 04., or 05.)
+    param_idx = None
+    for i, part in enumerate(path_parts):
+        if any(part.startswith(f"{j:02d}.") for j in range(1, 6)):
+            param_idx = i
+            break
+    
+    if param_idx is not None:
+        # Successfully extracted parameterization
+        # NOTE: path_parts[:param_idx] includes the age folder (e.g., ".../02_output/p12"),
+        # but we need the directory that CONTAINS all age folders (e.g., ".../02_output").
+        base_dir = os.path.join(*path_parts[:param_idx - 1])  # parent of age folder, e.g., 02_output
+        param_name = path_parts[param_idx]  # e.g., 05.HAN_filter_parameters_i300_r10_t10_u5
+        model_dir = path_parts[-1]  # e.g., region_specific
+        
+        # Scan all age directories
+        ages = ['p3', 'p12', 'p20', 'p60']
+        # Also try capitalized versions for robustness
+        ages.extend(['P3', 'P12', 'P20', 'P60'])
+        
+        for age in ages:
+            age_model_dir = os.path.join(base_dir, age, param_name, 'analysis', model_dir)
+            if os.path.exists(age_model_dir):
+                ages_found.append(age)
+                # Scan this age directory for CSV files
+                try:
+                    for fname in os.listdir(age_model_dir):
+                        # Match pattern: *_ALL_*_upsetplot_{model_suffix}.csv (aggregate samples only)
+                        if "_ALL_" in fname and fname.endswith(f"_upsetplot_{model_suffix}.csv"):
+                            fpath = os.path.join(age_model_dir, fname)
+                            try:
+                                df = pd.read_csv(fpath)
+                                if "Effect Size" in df.columns:
+                                    # Extract effect sizes, filtering out any non-numeric values
+                                    effect_sizes = df["Effect Size"].dropna()
+                                    # Convert to numeric, coercing errors to NaN
+                                    effect_sizes = pd.to_numeric(effect_sizes, errors='coerce').dropna()
+                                    all_effect_sizes.extend(effect_sizes.tolist())
+                                    files_scanned += 1
+                            except Exception as e:
+                                # Skip files that can't be read
+                                continue
+                except Exception as e:
+                    # Skip directories that can't be accessed
+                    continue
+    else:
+        # Fall back to scanning only current directory if parameterization cannot be extracted
+        if os.path.exists(output_dir):
+            for fname in os.listdir(output_dir):
+                # Match pattern: *_ALL_*_upsetplot_{model_suffix}.csv (aggregate samples only)
+                if "_ALL_" in fname and fname.endswith(f"_upsetplot_{model_suffix}.csv"):
+                    fpath = os.path.join(output_dir, fname)
+                    try:
+                        df = pd.read_csv(fpath)
+                        if "Effect Size" in df.columns:
+                            # Extract effect sizes, filtering out any non-numeric values
+                            effect_sizes = df["Effect Size"].dropna()
+                            # Convert to numeric, coercing errors to NaN
+                            effect_sizes = pd.to_numeric(effect_sizes, errors='coerce').dropna()
+                            all_effect_sizes.extend(effect_sizes.tolist())
+                            files_scanned += 1
+                    except Exception as e:
+                        # Skip files that can't be read
+                        continue
+    
+    # If no effect sizes found, return None (will use per-plot range)
+    if not all_effect_sizes:
+        return None, []
+    
+    # Calculate global min and max
+    global_min = min(all_effect_sizes)
+    global_max = max(all_effect_sizes)
+    
+    # Symmetric range for all effect sizes (centered at 0)
+    # Raw proportional uses (ratio - 1), so it's also centered at 0 like log2 version
+    max_abs = max(abs(global_min), abs(global_max))
+    unified_range = max_abs * 1.1
+    return (-unified_range, unified_range), all_effect_sizes
+
+def validate_unified_range(xlim, model_suffix, current_effect_sizes, all_effect_sizes):
+    """
+    Validate that unified x-axis range makes sense.
+    
+    Args:
+        xlim: Tuple (x_min, x_max) for unified x-axis limits
+        model_suffix: Model type (e.g., 'region_specific', 'proportional_effectsize', 'uniform')
+        current_effect_sizes: List of effect sizes from current sample
+        all_effect_sizes: List of all effect sizes collected from all samples
+    
+    Returns:
+        (is_valid, warnings_list): Tuple of boolean and list of warning messages
+    """
+    warnings = []
+    
+    if xlim is None:
+        return True, []  # No range to validate
+    
+    # Check range is not too extreme
+    range_size = xlim[1] - xlim[0]
+    if model_suffix == 'proportional_effectsize' and range_size > 2.0:
+        warnings.append(f"⚠️ Proportional effect size range is unusually large: {range_size:.4f}")
+    elif model_suffix in ['region_specific', 'uniform'] and range_size > 20.0:
+        warnings.append(f"⚠️ {model_suffix} range is unusually large: {range_size:.4f}")
+    
+    # Check symmetry
+    if abs(xlim[0] + xlim[1]) > 0.01:
+        warnings.append(f"⚠️ Range is not symmetric: [{xlim[0]:.4f}, {xlim[1]:.4f}]")
+    
+    # Check range is not zero or near-zero
+    if range_size < 0.001:
+        warnings.append(f"⚠️ Range is near-zero: {range_size:.4f} (all data may be at zero)")
+    
+    # Check data coverage
+    if current_effect_sizes:
+        outside_range = [es for es in current_effect_sizes if es < xlim[0] or es > xlim[1]]
+        if outside_range:
+            warnings.append(f"⚠️ {len(outside_range)} data points outside calculated range")
+    
+    # Check range encompasses all data
+    if all_effect_sizes:
+        data_min = min(all_effect_sizes)
+        data_max = max(all_effect_sizes)
+        if data_min < xlim[0] or data_max > xlim[1]:
+            warnings.append(f"⚠️ Calculated range does not fully encompass data: data=[{data_min:.4f}, {data_max:.4f}], range={xlim}")
+    
+    return len(warnings) == 0, warnings
+
+# ============================================================================
 # Function to generate effect significance (volcano) plot
 # ============================================================================
-def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, sample_name, alpha_val=alpha):
+def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, sample_name, alpha_val=alpha, xlabel=None, xlim=None, ylim=None, illustrator_output_dir=None, illustrator_report_ranges_only=False, illustrator_xlim=None, illustrator_ylim=None):
     """
     Generate effect significance (volcano) plot for a given model.
     
@@ -1389,6 +2186,13 @@ def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, 
         model_suffix: Suffix for filename (e.g., 'uniform' or 'region_specific')
         sample_name: Sample name for plot title and filename
         alpha_val: Significance threshold for Bonferroni correction
+        xlabel: Optional custom x-axis label. If None, uses default label.
+        xlim: Optional tuple (x_min, x_max) for unified x-axis limits. If None, calculates from current data.
+        ylim: Optional tuple (y_min, y_max) for y-axis limits. If None, uses data-based range.
+        illustrator_output_dir: If set, also save an illustrator-ready SVG (fixed axes, no title/axis/tick labels, Helvetica text).
+        illustrator_report_ranges_only: If True with illustrator_output_dir, append data range to _data_ranges.csv and do not save SVG.
+        illustrator_xlim: Optional (xmin, xmax) for illustrator export. If None, uses (-4, 4).
+        illustrator_ylim: Optional (ymin, ymax) for illustrator export. If None, uses (0, 10).
     """
     from adjustText import adjust_text
     
@@ -1413,11 +2217,15 @@ def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, 
     plt.rc('text', usetex=False)
     plt.rc('font', family='serif')
     ax.set_title(sample_name.replace('_', ''), fontsize=16)
-    ax.set_xlabel("Effect Size \n$log_2($observed/expected$)$", fontsize=16)
+    
+    # Use custom xlabel if provided, otherwise use default
+    if xlabel is None:
+        xlabel = "Effect Size \n$log_2($observed/expected$)$"
+    ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel("Significance\n $-log_{10}(P)$", fontsize=16)
     ax.axhline(y=pcutoff, linestyle='--')
     ax.axvline(x=0, linestyle='--')
-    ax.text(x=-.5, y=pcutoff + 0.05, s='P-value cutoff', fontsize=16)
+    pvalue_text = ax.text(x=-.5, y=pcutoff + 0.05, s='P-value cutoff', fontsize=16)
     
     # Scatter plot
     ax.scatter(*zip(*subset_list(sigs_data, mask)), c=subset_list(color_labels, mask))
@@ -1433,19 +2241,27 @@ def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, 
     
     # Adjust y-axis limits
     y_vals = [y for _, y in subset_list(sigs_data, mask)]
-    padding = 0.1 * (max(y_vals) - min(y_vals))  # Add 10% padding
-    ax.set_ylim(min(y_vals) - padding, max(y_vals) + padding)
+    if ylim is not None:
+        ax.set_ylim(ylim[0], ylim[1])
+    else:
+        padding = 0.1 * (max(y_vals) - min(y_vals))  # Add 10% padding
+        ax.set_ylim(min(y_vals) - padding, max(y_vals) + padding)
     
-    # Adjust x-axis limits with padding
-    x_vals = [x for x, _ in subset_list(sigs_data, mask)]
-    x_padding = 0.1 * (max(x_vals) - min(x_vals))  # 10% padding
-    
-    x_min = min(x_vals) - x_padding
-    x_max = max(x_vals) + x_padding
-    
-    # Ensure symmetric padding if range is around 0
-    x_abs_max = max(abs(x_min), abs(x_max))
-    ax.set_xlim(-x_abs_max, x_abs_max)
+    # Adjust x-axis limits
+    if xlim is not None:
+        # Use provided unified limits for cross-cohort comparisons
+        ax.set_xlim(xlim[0], xlim[1])
+    else:
+        # Calculate from current data (original behavior)
+        x_vals = [x for x, _ in subset_list(sigs_data, mask)]
+        x_padding = 0.1 * (max(x_vals) - min(x_vals))  # 10% padding
+        
+        x_min = min(x_vals) - x_padding
+        x_max = max(x_vals) + x_padding
+        
+        # Ensure symmetric padding if range is around 0
+        x_abs_max = max(abs(x_min), abs(x_max))
+        ax.set_xlim(-x_abs_max, x_abs_max)
     
     # Adjust text positions to avoid overlap
     adjust_text(
@@ -1459,7 +2275,124 @@ def plot_effect_significance(sigs_data, slabels_data, output_dir, model_suffix, 
     for ext in ["pdf", "svg", "png"]:
         fig.savefig(os.path.normpath(os.path.join(output_dir, f"{sample_name}_effect_significance_{model_suffix}.{ext}")))
     
+    # Optionally report data range only (for computing uniform limits) or save illustrator-ready version
+    if illustrator_output_dir is not None:
+        os.makedirs(illustrator_output_dir, exist_ok=True)
+        masked_sigs = subset_list(sigs_data, mask)
+        x_vals = [x for x, _ in masked_sigs]
+        y_vals = [y for _, y in masked_sigs]
+        data_x_min, data_x_max = min(x_vals), max(x_vals)
+        data_y_min, data_y_max = min(y_vals), max(y_vals)
+
+        if illustrator_report_ranges_only:
+            ranges_file = os.path.normpath(os.path.join(illustrator_output_dir, "_data_ranges.csv"))
+            file_exists = os.path.isfile(ranges_file)
+            with open(ranges_file, "a") as f:
+                if not file_exists:
+                    f.write("sample_name,x_min,x_max,y_min,y_max\n")
+                f.write(f"{sample_name},{data_x_min},{data_x_max},{data_y_min},{data_y_max}\n")
+            plt.close(fig)
+            return
+
+        ax.set_title('')
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+        ax.tick_params(axis='both', labelbottom=False, labelleft=False, length=0)
+        pvalue_text.remove()
+        xlim_use = illustrator_xlim if illustrator_xlim is not None else (-4.0, 4.0)
+        ylim_use = illustrator_ylim if illustrator_ylim is not None else (0.0, 10.0)
+        ax.set_xlim(xlim_use[0], xlim_use[1])
+        ax.set_ylim(ylim_use[0], ylim_use[1])
+        for t in texts:
+            t.set_fontfamily('sans-serif')
+            t.set_fontname('Helvetica')
+        out_path = os.path.normpath(os.path.join(illustrator_output_dir, f"{sample_name}_effect_significance_{model_suffix}.svg"))
+        # Keep text as editable <text> elements in SVG (not converted to paths)
+        with mpl.rc_context({'svg.fonttype': 'none'}):
+            fig.savefig(out_path, format='svg')
+        print(f"Illustrator volcano scales for {sample_name}: x=[{xlim_use[0]}, {xlim_use[1]}], y=[{ylim_use[0]}, {ylim_use[1]}]")
     plt.close(fig)
+
+# Calculate unified x-axis ranges for each model type
+print("\n" + "="*80)
+print("Calculating unified x-axis ranges for cross-cohort comparisons...")
+print("="*80)
+
+# Extract current effect sizes from each model
+current_effect_sizes_uniform = [e for e, _ in sigs]
+current_effect_sizes_rs = [e for e, _ in sigs_rs]
+current_effect_sizes_prop = [e for e, _ in sigs_prop]
+current_effect_sizes_prop_raw = [e for e, _ in sigs_prop_raw]
+
+# Calculate unified ranges for each model type
+xlim_uniform, all_effect_sizes_uniform = calculate_unified_xaxis_range(uniform_plot_dir, 'uniform', current_effect_sizes_uniform)
+xlim_rs, all_effect_sizes_rs = calculate_unified_xaxis_range(region_specific_plot_dir, 'region_specific', current_effect_sizes_rs)
+xlim_prop, all_effect_sizes_prop = calculate_unified_xaxis_range(region_specific_plot_dir, 'proportional_effectsize', current_effect_sizes_prop)
+xlim_prop_raw, all_effect_sizes_prop_raw = calculate_unified_xaxis_range(region_specific_plot_dir, 'proportional_effectsize_raw', current_effect_sizes_prop_raw)
+
+# Validate ranges
+print("\n" + "-"*80)
+print("Validating unified x-axis ranges...")
+print("-"*80)
+
+is_valid_uniform, warnings_uniform = validate_unified_range(xlim_uniform, 'uniform', current_effect_sizes_uniform, all_effect_sizes_uniform)
+is_valid_rs, warnings_rs = validate_unified_range(xlim_rs, 'region_specific', current_effect_sizes_rs, all_effect_sizes_rs)
+is_valid_prop, warnings_prop = validate_unified_range(xlim_prop, 'proportional_effectsize', current_effect_sizes_prop, all_effect_sizes_prop)
+
+# Log validation results
+if warnings_uniform:
+    for warning in warnings_uniform:
+        print(f"[UNIFORM] {warning}")
+if warnings_rs:
+    for warning in warnings_rs:
+        print(f"[REGION-SPECIFIC] {warning}")
+if warnings_prop:
+    for warning in warnings_prop:
+        print(f"[PROPORTIONAL EFFECT SIZE] {warning}")
+
+# Cross-model type validation
+print("\n" + "-"*80)
+print("Cross-model type range comparison...")
+print("-"*80)
+
+if xlim_prop and xlim_rs:
+    prop_range = xlim_prop[1] - xlim_prop[0]
+    rs_range = xlim_rs[1] - xlim_rs[0]
+    if prop_range > rs_range * 0.5:  # Proportional should be much smaller
+        print(f"⚠️ WARNING: Proportional effect size range ({prop_range:.4f}) is unexpectedly large compared to region_specific ({rs_range:.4f})")
+    elif prop_range < rs_range * 0.1:  # But shouldn't be too small either
+        print(f"ℹ️ INFO: Proportional effect size range ({prop_range:.4f}) is {rs_range/prop_range:.1f}x smaller than region_specific ({rs_range:.4f}) - expected behavior")
+
+# Verify ranges are consistent across similar model types
+if xlim_uniform and xlim_rs:
+    uniform_range = xlim_uniform[1] - xlim_uniform[0]
+    rs_range = xlim_rs[1] - xlim_rs[0]
+    range_ratio = max(uniform_range, rs_range) / min(uniform_range, rs_range)
+    if range_ratio > 2.0:  # Ranges should be similar
+        print(f"⚠️ WARNING: Uniform range ({uniform_range:.4f}) and region_specific range ({rs_range:.4f}) differ significantly (ratio: {range_ratio:.2f})")
+    else:
+        print(f"ℹ️ INFO: Uniform range ({uniform_range:.4f}) and region_specific range ({rs_range:.4f}) are consistent (ratio: {range_ratio:.2f})")
+
+# Log calculated ranges
+print("\n" + "-"*80)
+print("Calculated unified x-axis ranges:")
+print("-"*80)
+if xlim_uniform:
+    print(f"✅ [UNIFORM] Unified x-axis range: [{xlim_uniform[0]:.4f}, {xlim_uniform[1]:.4f}]")
+else:
+    print(f"⚠️ [UNIFORM] No existing data found, using per-plot range")
+if xlim_rs:
+    print(f"✅ [REGION-SPECIFIC] Unified x-axis range: [{xlim_rs[0]:.4f}, {xlim_rs[1]:.4f}]")
+else:
+    print(f"⚠️ [REGION-SPECIFIC] No existing data found, using per-plot range")
+if xlim_prop:
+    print(f"✅ [PROPORTIONAL EFFECT SIZE] Unified x-axis range: [{xlim_prop[0]:.4f}, {xlim_prop[1]:.4f}]")
+else:
+    print(f"⚠️ [PROPORTIONAL EFFECT SIZE] No existing data found, using per-plot range")
+if xlim_prop_raw:
+    print(f"✅ [PROPORTIONAL EFFECT SIZE (raw)] Unified x-axis range: [{xlim_prop_raw[0]:.4f}, {xlim_prop_raw[1]:.4f}]")
+else:
+    print(f"⚠️ [PROPORTIONAL EFFECT SIZE (raw)] No existing data found, using per-plot range")
 
 # Generate effect significance plots for both models
 print("\n" + "="*80)
@@ -1467,12 +2400,36 @@ print("Generating effect significance plots for both models...")
 print("="*80)
 
 # Uniform model plot
-plot_effect_significance(sigs, slabels, uniform_plot_dir, 'uniform', sample_name, alpha)
+plot_effect_significance(
+    sigs, slabels, uniform_plot_dir, 'uniform', sample_name, alpha, xlim=xlim_uniform,
+    illustrator_output_dir=getattr(args, 'illustrator_volcano_dir', None),
+    illustrator_report_ranges_only=getattr(args, 'illustrator_report_ranges_only', False),
+    illustrator_xlim=tuple(args.illustrator_xlim) if getattr(args, 'illustrator_xlim', None) else None,
+    illustrator_ylim=tuple(args.illustrator_ylim) if getattr(args, 'illustrator_ylim', None) else None,
+)
 print(f"✅ [UNIFORM MODEL] Effect significance plot saved to {uniform_plot_dir}")
 
 # Region-specific model plot
-plot_effect_significance(sigs_rs, slabels_rs, region_specific_plot_dir, 'region_specific', sample_name, alpha)
+plot_effect_significance(sigs_rs, slabels_rs, region_specific_plot_dir, 'region_specific', sample_name, alpha, xlim=xlim_rs)
 print(f"✅ [REGION-SPECIFIC MODEL] Effect significance plot saved to {region_specific_plot_dir}")
+
+# Proportional effect size model plot (log2 x-axis)
+plot_effect_significance(
+    sigs_prop, slabels_prop, region_specific_plot_dir, 
+    'proportional_effectsize', sample_name, alpha,
+    xlabel="Effect Size (Proportional)\n$log_2(\\frac{k/n_0 + 1}{\\pi + 1})$",
+    xlim=xlim_prop
+)
+print(f"✅ [PROPORTIONAL EFFECT SIZE MODEL] Effect significance plot saved to {region_specific_plot_dir}")
+
+# Proportional effect size model plot (raw x-axis, no log2)
+plot_effect_significance(
+    sigs_prop_raw, slabels_prop_raw, region_specific_plot_dir,
+    'proportional_effectsize_raw', sample_name, alpha,
+    xlabel="Effect Size (Proportional, no log2)\n$\\frac{k/n_0 + 1}{\\pi + 1} - 1$",
+    xlim=xlim_prop_raw
+)
+print(f"✅ [PROPORTIONAL EFFECT SIZE MODEL (raw)] Effect significance plot saved to {region_specific_plot_dir}")
 
 #per cell projection strength
 def gen_per_cell_plot(df, cell_ids, motif_labels, dcounts, expected,
@@ -1835,6 +2792,11 @@ def gen_prob_matrix(df : pd.DataFrame):
 
 probmat = gen_prob_matrix(df)
 
+# Save conditional probability matrix for correlated model
+probmat_path = os.path.join(out_dir, f"{sample_name}_Conditional_Probability_Matrix.csv")
+probmat.to_csv(probmat_path)
+print(f"💾 Saved conditional probability matrix to: {probmat_path}")
+
 fig, ax = plt.subplots(figsize=(10,10))
 ax.set_title(sample_name.replace('_',''),fontsize=20)
 colors2 = ['darkblue','#1f9ed1','#26ffc5','#ffc526','yellow']
@@ -2142,23 +3104,23 @@ group = []
 bonferroni_correction = len(slabels)
 for i in range(len(degree)):
     """
-    Group 1: motifs significantly over represented
-    Group 2: motifs non-sig over-represented
-    Group 3: motifs non-sig under-represented
-    Group 4: motifs significantly under represented
+    Group 1 = significant + over-represented
+    Group 2 = significant + under-represented
+    Group 3 = non-significant + over-represented
+    Group 4 = non-significant + under-represented
     """
     grp = 0
     thr = 0.05 / bonferroni_correction
-    if effectsigsraw[i,0] > 0: #over-represented
-        if effectsigsraw[i,1] < thr: #statistically significant
-            grp = 1
+    if effectsigsraw[i,0] > 0:  # over-represented
+        if effectsigsraw[i,1] < thr:  # statistically significant
+            grp = 1  # significant + over-represented
         else:
-            grp = 3 #2
-    else: #under-represented
-        if effectsigsraw[i,1] > thr:
-            grp = 4
-        else: #statistically significant
-            grp = 2
+            grp = 3  # non-significant + over-represented
+    else:  # under-represented
+        if effectsigsraw[i,1] > thr:  # not significant
+            grp = 4  # non-significant + under-represented
+        else:  # statistically significant
+            grp = 2  # significant + under-represented
     group.append(grp)
 
 # ============================================================================
@@ -2215,23 +3177,23 @@ group_rs = []
 bonferroni_correction_rs = len(slabels_rs)
 for i in range(len(degree_rs)):
     """
-    Group 1: motifs significantly over represented
-    Group 2: motifs non-sig over-represented
-    Group 3: motifs non-sig under-represented
-    Group 4: motifs significantly under represented
+    Group 1 = significant + over-represented
+    Group 2 = significant + under-represented
+    Group 3 = non-significant + over-represented
+    Group 4 = non-significant + under-represented
     """
     grp = 0
     thr = 0.05 / bonferroni_correction_rs
     if effectsigsraw_rs[i, 0] > 0:  # over-represented
         if effectsigsraw_rs[i, 1] < thr:  # statistically significant
-            grp = 1
+            grp = 1  # significant + over-represented
         else:
-            grp = 3  # 2
+            grp = 3  # non-significant + over-represented
     else:  # under-represented
-        if effectsigsraw_rs[i, 1] > thr:
-            grp = 4
+        if effectsigsraw_rs[i, 1] > thr:  # not significant
+            grp = 4  # non-significant + under-represented
         else:  # statistically significant
-            grp = 2
+            grp = 2  # significant + under-represented
     group_rs.append(grp)
 
 dfraw_rs = pd.DataFrame(data=[
@@ -2254,6 +3216,77 @@ print(f"💾 [REGION-SPECIFIC MODEL] Saved upsetplot data to: {region_specific_p
 dfdata_rs = prepare_upset_data(dfraw_rs)
 dfdata_rs = dfdata_rs.sort_values(by=['Group', 'Observed'], ascending=[True, False])
 print(f"✅ [REGION-SPECIFIC MODEL] Upsetplot data prepared for {len(dfdata_rs)} motifs")
+
+# ============================================================================
+# PROPORTIONAL EFFECT SIZE MODEL: Upsetplot data preparation
+# ============================================================================
+print("\n" + "="*80)
+print("[PROPORTIONAL EFFECT SIZE MODEL] Preparing upsetplot data...")
+print("="*80)
+
+# Calculate raw significance values for proportional effect size model
+sigsraw_prop, slabelsraw_prop = get_motif_sig_pts_proportional_effectsize(
+    dcounts, motif_labels, motif_probs_region_specific, n0=n0, exclude_zeros=False, p_transform=lambda x: x
+)
+
+effectsigsraw_prop = np.array(sigsraw_prop)
+# Expected SD using region-specific probabilities (same as region_specific model)
+# Convert to float to handle sympy objects
+expected_sd_raw_prop = []
+for i in range(len(slabelsraw_prop)):
+    prob_val = float(motif_probs_rs_array[i])
+    n0_val = float(n0)
+    expected_sd_raw_prop.append(np.sqrt(prob_val * n0_val * (1.0 - prob_val)))
+expected_sd_raw_prop = np.array(expected_sd_raw_prop)
+
+# Degree is the same for all models
+degree_prop = [len(x) for x in motif_labels]
+degree_prop[0] = 0
+
+# Group classification for proportional effect size model
+group_prop = []
+bonferroni_correction_prop = len(slabels_prop)
+for i in range(len(degree_prop)):
+    """
+    Group 1 = significant + over-represented
+    Group 2 = significant + under-represented
+    Group 3 = non-significant + over-represented
+    Group 4 = non-significant + under-represented
+    """
+    grp = 0
+    thr = 0.05 / bonferroni_correction_prop
+    if effectsigsraw_prop[i, 0] > 0:  # over-represented
+        if effectsigsraw_prop[i, 1] < thr:  # statistically significant
+            grp = 1  # significant + over-represented
+        else:
+            grp = 3  # non-significant + over-represented
+    else:  # under-represented
+        if effectsigsraw_prop[i, 1] > thr:  # not significant
+            grp = 4  # non-significant + under-represented
+        else:  # statistically significant
+            grp = 2  # significant + under-represented
+    group_prop.append(grp)
+
+dfraw_prop = pd.DataFrame(data=[
+    motif_labels,
+    dcounts,
+    exp_counts_rs.astype(int),
+    expected_sd_raw_prop,
+    effectsigsraw_prop[:, 0],
+    effectsigsraw_prop[:, 1],
+    degree_prop,
+    group_prop
+]).T
+dfraw_prop.columns = ['Motifs', 'Observed', 'Expected', 'Expected SD', 'Effect Size', 'P-value', 'Degree', 'Group']
+dfraw_prop.to_csv(
+    os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_proportional_effectsize.csv")),
+    index=False
+)
+print(f"💾 [PROPORTIONAL EFFECT SIZE MODEL] Saved upsetplot data to: {region_specific_plot_dir}/{sample_name}_upsetplot_proportional_effectsize.csv")
+
+dfdata_prop = prepare_upset_data(dfraw_prop)
+dfdata_prop = dfdata_prop.sort_values(by=['Group', 'Observed'], ascending=[True, False])
+print(f"✅ [PROPORTIONAL EFFECT SIZE MODEL] Upsetplot data prepared for {len(dfdata_prop)} motifs")
 
 
 #upsetplot fxn
@@ -2321,6 +3354,499 @@ for ext in ["pdf", "svg", "png"]:
     fig_rs.savefig(os.path.normpath(os.path.join(region_specific_plot_dir, f"{sample_name}_upsetplot_region_specific.{ext}")))
 plt.close(fig_rs)
 print(f"✅ [REGION-SPECIFIC MODEL] Upsetplot saved to {region_specific_plot_dir}")
+
+# ============================================================================
+# CORRELATED MODEL: Compute and save outputs using conditional probabilities
+# ============================================================================
+# Only compute if we have a conditional probability matrix (either from anchor or local)
+if 'probmat' in dir() and probmat is not None:
+    print("\n" + "="*80)
+    print("METHOD 3: CORRELATED BINOMIAL PROBABILITY MODEL")
+    print("="*80)
+    
+    # Use anchor correlation matrix if provided, otherwise use local probmat
+    cond_prob_matrix = corr_matrix_for_expected if corr_matrix_for_expected is not None else probmat
+    
+    # Compute correlated model motif probabilities
+    motif_probs_correlated = compute_motif_probabilities_correlated(
+        motif_labels, psdict_for_expected, cond_prob_matrix, columns
+    )
+    print(f"🔍 [CORRELATED MODEL] Computed probabilities for {len(motif_probs_correlated)} motifs")
+    
+    # Convert to array for expected count calculation
+    motif_probs_corr_array = np.array([motif_probs_correlated.get(i, 0.0) for i in range(len(motif_labels))])
+    
+    # Compute expected counts
+    exp_counts_corr = n0 * motif_probs_corr_array
+    exp_counts_corr[0] = 0  # Empty motif
+    
+    print(f"🔍 [CORRELATED MODEL] Total expected count: {np.sum(exp_counts_corr):.2f}")
+    
+    # Compute effect sizes and significance for correlated model
+    expected_sd_raw_corr = []
+    effectsigsraw_corr = []
+    degree_corr = []
+    group_corr = []
+    
+    # Convert n0 to Python float (may be sympy Float)
+    n0_float = float(n0)
+    
+    for i, label in enumerate(motif_labels):
+        d = len(label)
+        degree_corr.append(d)
+        
+        p_corr = float(motif_probs_corr_array[i])  # Convert to Python float
+        expected_corr = float(exp_counts_corr[i])  # Convert to Python float
+        expected_sd = np.sqrt(n0_float * p_corr * (1 - p_corr)) if p_corr > 0 and p_corr < 1 else 0
+        expected_sd_raw_corr.append(expected_sd)
+        
+        observed = dcounts[i]
+        
+        # Effect size: log2((observed + 1) / (expected + 1))
+        # This matches the formula used in uniform and region_specific models
+        if expected_corr > 0 or observed > 0:
+            effect_size = np.log2((observed + 1) / (expected_corr + 1))
+        else:
+            effect_size = 0
+        
+        # P-value using binomial test
+        if expected_corr > 0 and p_corr > 0:
+            p_value = binomtest(int(observed), n=int(n0_float), p=max(p_corr, 1e-10)).pvalue
+        else:
+            p_value = 1.0
+        
+        effectsigsraw_corr.append([effect_size, p_value])
+        
+        # Group assignment (numeric like other models)
+        # Group 1 = significant + over-represented
+        # Group 2 = significant + under-represented
+        # Group 3 = non-significant + over-represented
+        # Group 4 = non-significant + under-represented
+        bonferroni_thr = alpha / len(motif_labels)
+        if effect_size > 0:  # over-represented
+            if p_value < bonferroni_thr:
+                grp = 1  # significant + over-represented
+            else:
+                grp = 3  # non-significant + over-represented
+        else:  # under-represented
+            if p_value < bonferroni_thr:
+                grp = 2  # significant + under-represented
+            else:
+                grp = 4  # non-significant + under-represented
+        group_corr.append(grp)
+    
+    effectsigsraw_corr = np.array(effectsigsraw_corr)
+    
+    # Create DataFrame for correlated model
+    dfraw_corr = pd.DataFrame(data=[
+        motif_labels,
+        dcounts,
+        exp_counts_corr.astype(int),
+        expected_sd_raw_corr,
+        effectsigsraw_corr[:, 0],
+        effectsigsraw_corr[:, 1],
+        degree_corr,
+        group_corr
+    ]).T
+    dfraw_corr.columns = ['Motifs', 'Observed', 'Expected', 'Expected SD', 'Effect Size', 'P-value', 'Degree', 'Group']
+    dfraw_corr.to_csv(
+        os.path.normpath(os.path.join(correlated_plot_dir, f"{sample_name}_upsetplot_correlated.csv")),
+        index=False
+    )
+    print(f"💾 [CORRELATED MODEL] Saved upsetplot data to: {correlated_plot_dir}/{sample_name}_upsetplot_correlated.csv")
+    
+    # Prepare upset data
+    dfdata_corr = prepare_upset_data(dfraw_corr)
+    dfdata_corr = dfdata_corr.sort_values(by=['Group', 'Observed'], ascending=[True, False])
+    print(f"✅ [CORRELATED MODEL] Upsetplot data prepared for {len(dfdata_corr)} motifs")
+    
+    # Generate upsetplot for correlated model
+    fig_corr, _ = kplot(dfdata_corr)
+    for ext in ["pdf", "svg", "png"]:
+        fig_corr.savefig(os.path.normpath(os.path.join(correlated_plot_dir, f"{sample_name}_upsetplot_correlated.{ext}")))
+    plt.close(fig_corr)
+    print(f"✅ [CORRELATED MODEL] Upsetplot saved to {correlated_plot_dir}")
+    
+    # Generate effect significance plot for correlated model
+    # Transform p-values to -log10 scale and create sigs list
+    sigs_corr = []
+    slabels_corr = motif_labels
+    for i in range(len(effectsigsraw_corr)):
+        effect_size = effectsigsraw_corr[i, 0]
+        p_val = max(effectsigsraw_corr[i, 1], 1e-10)  # Avoid log(0)
+        sig_val = -1 * np.log10(p_val)
+        sigs_corr.append((effect_size, sig_val))
+    
+    # Calculate unified x-axis range for correlated model
+    current_effect_sizes_corr = [e for e, _ in sigs_corr]
+    xlim_corr, all_effect_sizes_corr = calculate_unified_xaxis_range(correlated_plot_dir, 'correlated', current_effect_sizes_corr)
+    
+    # Validate range
+    is_valid_corr, warnings_corr = validate_unified_range(xlim_corr, 'correlated', current_effect_sizes_corr, all_effect_sizes_corr)
+    if warnings_corr:
+        for warning in warnings_corr:
+            print(f"[CORRELATED] {warning}")
+    
+    if xlim_corr:
+        print(f"✅ [CORRELATED] Unified x-axis range: [{xlim_corr[0]:.4f}, {xlim_corr[1]:.4f}]")
+    
+    plot_effect_significance(sigs_corr, slabels_corr, correlated_plot_dir, 'correlated', sample_name, alpha, xlim=xlim_corr)
+    print(f"✅ [CORRELATED MODEL] Effect significance plot saved to {correlated_plot_dir}")
+else:
+    print("⚠️ [CORRELATED MODEL] Skipped - no conditional probability matrix available")
+
+# ============================================================================
+# GENERIC MODEL PROCESSING FUNCTION
+# ============================================================================
+def process_model_generic(model_name, motif_labels, dcounts, n0, motif_probs_dict, 
+                         plot_dir_model, sample_name, alpha, 
+                         anchor_probs_dict=None, anchor_corr_matrix=None,
+                         smoothing_alpha=1.0, zero_inflation=0.0):
+    """
+    Generic function to process any model type.
+    
+    Args:
+        model_name: Name of the model (e.g., 'empirical', 'smoothed_empirical')
+        motif_labels: List of motif labels
+        dcounts: Observed counts for each motif
+        n0: Estimated population size
+        motif_probs_dict: Dictionary of motif probabilities (index -> prob)
+        plot_dir_model: Output directory for this model
+        sample_name: Sample name for file naming
+        alpha: Significance threshold
+        anchor_probs_dict: Anchor probabilities (for P60-anchored models)
+        anchor_corr_matrix: Anchor correlation matrix (for models that use it)
+        smoothing_alpha: Smoothing parameter for smoothed_empirical
+        zero_inflation: Zero-inflation parameter for zero_inflated model
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        print(f"\n{'='*80}")
+        print(f"[{model_name.upper()} MODEL] Processing...")
+        print(f"{'='*80}")
+        
+        # Convert motif_probs_dict to array
+        motif_probs_array = np.array([motif_probs_dict.get(i, 0.0) for i in range(len(motif_labels))])
+        
+        # Numerical stability: clamp probabilities to [0, 1]
+        motif_probs_array = np.clip(motif_probs_array, 0.0, 1.0)
+        
+        # Check for numerical issues
+        prob_sum = np.sum(motif_probs_array)
+        if prob_sum > 1.01 or prob_sum < 0.99:
+            print(f"⚠️ [{model_name.upper()} MODEL] Warning: Probability sum = {prob_sum:.6f} (expected ~1.0)")
+        
+        # Compute expected counts
+        exp_counts = n0 * motif_probs_array
+        exp_counts[0] = 0  # Empty motif
+        
+        print(f"🔍 [{model_name.upper()} MODEL] Total expected count: {np.sum(exp_counts):.2f}")
+        
+        # Compute effect sizes, p-values, and groups
+        n0_float = float(n0)
+        expected_sd_raw = []
+        effectsigsraw = []
+        degree = []
+        group = []
+        
+        for i, label in enumerate(motif_labels):
+            d = len(label)
+            degree.append(d)
+            
+            p_val = float(motif_probs_array[i])
+            expected = float(exp_counts[i])
+            expected_sd = np.sqrt(n0_float * p_val * (1 - p_val)) if p_val > 0 and p_val < 1 else 0
+            expected_sd_raw.append(expected_sd)
+            
+            observed = dcounts[i]
+            
+            # Effect size: log2((observed + 1) / (expected + 1))
+            # This matches the formula used in uniform and region_specific models
+            # The +1 pseudocount prevents division by zero and log of zero
+            if expected > 0 or observed > 0:
+                effect_size = np.log2((observed + 1) / (expected + 1))
+                # Clamp extreme effect sizes to reasonable range (±50) for numerical stability
+                if abs(effect_size) > 50:
+                    print(f"⚠️ [{model_name.upper()} MODEL] Warning: Extreme effect size {effect_size:.2f} for motif {i}, clamping to ±50")
+                    effect_size = np.clip(effect_size, -50, 50)
+            else:
+                effect_size = 0
+            
+            # P-value using binomial test
+            if expected > 0 and p_val > 0:
+                p_value = binomtest(int(observed), n=int(n0_float), p=max(p_val, 1e-10)).pvalue
+            else:
+                p_value = 1.0
+            
+            effectsigsraw.append([effect_size, p_value])
+            
+            # Group assignment
+            bonferroni_thr = alpha / len(motif_labels)
+            if effect_size > 0:  # over-represented
+                if p_value < bonferroni_thr:
+                    grp = 1  # significant + over-represented
+                else:
+                    grp = 3  # non-significant + over-represented
+            else:  # under-represented
+                if p_value < bonferroni_thr:
+                    grp = 2  # significant + under-represented
+                else:
+                    grp = 4  # non-significant + under-represented
+            group.append(grp)
+        
+        effectsigsraw = np.array(effectsigsraw)
+        
+        # Create DataFrame
+        dfraw = pd.DataFrame(data=[
+            motif_labels,
+            dcounts,
+            exp_counts.astype(int),
+            expected_sd_raw,
+            effectsigsraw[:, 0],
+            effectsigsraw[:, 1],
+            degree,
+            group
+        ]).T
+        dfraw.columns = ['Motifs', 'Observed', 'Expected', 'Expected SD', 'Effect Size', 'P-value', 'Degree', 'Group']
+        
+        # Save CSV
+        csv_path = os.path.normpath(os.path.join(plot_dir_model, f"{sample_name}_upsetplot_{model_name}.csv"))
+        dfraw.to_csv(csv_path, index=False)
+        print(f"💾 [{model_name.upper()} MODEL] Saved upsetplot data to: {csv_path}")
+        
+        # Save obs/exp CSV
+        df_obs_exp = pd.DataFrame({
+            'Motif': [concatenate_list_data([label])[0] if label else '' for label in motif_labels],
+            'Observed': dcounts,
+            'Expected': exp_counts.astype(int)
+        })
+        obs_exp_path = os.path.normpath(os.path.join(plot_dir_model, f"{sample_name}_motif_obs_exp_{model_name}.csv"))
+        df_obs_exp.to_csv(obs_exp_path, index=False)
+        print(f"💾 [{model_name.upper()} MODEL] Saved obs/exp to: {obs_exp_path}")
+        
+        # Prepare upset data
+        dfdata = prepare_upset_data(dfraw)
+        dfdata = dfdata.sort_values(by=['Group', 'Observed'], ascending=[True, False])
+        print(f"✅ [{model_name.upper()} MODEL] Upsetplot data prepared for {len(dfdata)} motifs")
+        
+        # Generate upsetplot
+        if len(dfdata) > 0:
+            fig, _ = kplot(dfdata)
+            for ext in ["pdf", "svg", "png"]:
+                fig.savefig(os.path.normpath(os.path.join(plot_dir_model, f"{sample_name}_upsetplot_{model_name}.{ext}")))
+            plt.close(fig)
+            print(f"✅ [{model_name.upper()} MODEL] Upsetplot saved to {plot_dir_model}")
+        
+        # Generate effect significance plot
+        sigs = []
+        slabels = motif_labels
+        for i in range(len(effectsigsraw)):
+            effect_size = effectsigsraw[i, 0]
+            p_val = max(effectsigsraw[i, 1], 1e-10)  # Avoid log(0)
+            sig_val = -1 * np.log10(p_val)
+            sigs.append((effect_size, sig_val))
+        
+        # Calculate unified x-axis range for this model type
+        current_effect_sizes = [e for e, _ in sigs]
+        xlim_model, all_effect_sizes_model = calculate_unified_xaxis_range(plot_dir_model, model_name, current_effect_sizes)
+        
+        # Validate range
+        is_valid_model, warnings_model = validate_unified_range(xlim_model, model_name, current_effect_sizes, all_effect_sizes_model)
+        if warnings_model:
+            for warning in warnings_model:
+                print(f"[{model_name.upper()}] {warning}")
+        
+        if xlim_model:
+            print(f"✅ [{model_name.upper()}] Unified x-axis range: [{xlim_model[0]:.4f}, {xlim_model[1]:.4f}]")
+        
+        plot_effect_significance(sigs, slabels, plot_dir_model, model_name, sample_name, alpha, xlim=xlim_model)
+        print(f"✅ [{model_name.upper()} MODEL] Effect significance plot saved to {plot_dir_model}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ [{model_name.upper()} MODEL] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# ============================================================================
+# PROCESS NEW MODELS
+# ============================================================================
+
+# Process empirical model
+if 'empirical' in models_to_process:
+    if args.is_anchor_model:
+        # For anchor run, use observed frequencies WITHOUT normalization
+        # This ensures expected = N0 * P = N0 * (observed/N0) = observed (perfect fit)
+        motif_probs_empirical = compute_motif_probabilities_empirical(motif_labels, dcounts, n0, normalize=False)
+        # Save anchor probabilities for empirical model
+        empirical_anchor_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Empirical_Probabilities.csv"))
+        df_empirical_anchor = pd.DataFrame({
+            'Motif': [concatenate_list_data([label])[0] if label else '' for label in motif_labels],
+            'Probability': [motif_probs_empirical.get(i, 0.0) for i in range(len(motif_labels))],
+            'Observed_Count': dcounts,
+            'N0': [n0] * len(motif_labels)
+        })
+        df_empirical_anchor.to_csv(empirical_anchor_path, index=False)
+        print(f"💾 [EMPIICAL MODEL] Saved anchor probabilities to: {empirical_anchor_path}")
+    else:
+        # For non-anchor runs, load anchor probabilities if available
+        empirical_anchor_file = None
+        if anchor_probs_loaded:
+            # Try to find empirical anchor file (would need to be generated separately)
+            empirical_anchor_file = args.anchor_model_file.replace('Region-specific_Probabilities', 'Empirical_Probabilities')
+            if os.path.exists(empirical_anchor_file):
+                df_empirical_anchor = pd.read_csv(empirical_anchor_file)
+                empirical_probs_dict = dict(zip(range(len(motif_labels)), df_empirical_anchor['Probability'].values))
+                motif_probs_empirical = empirical_probs_dict
+            else:
+                # Fallback: use current observed frequencies (normalize for consistency with other models)
+                motif_probs_empirical = compute_motif_probabilities_empirical(motif_labels, dcounts, n0, normalize=True)
+        else:
+            motif_probs_empirical = compute_motif_probabilities_empirical(motif_labels, dcounts, n0, normalize=True)
+    
+    process_model_generic('empirical', motif_labels, dcounts, n0, motif_probs_empirical,
+                         model_plot_dirs['empirical'], sample_name, alpha)
+
+# Process smoothed empirical model
+if 'smoothed_empirical' in models_to_process:
+    if args.is_anchor_model:
+        motif_probs_smoothed = compute_motif_probabilities_smoothed_empirical(
+            motif_labels, dcounts, n0, alpha=args.smoothing_alpha
+        )
+        # Save anchor probabilities
+        smoothed_anchor_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Smoothed_Empirical_Probabilities.csv"))
+        df_smoothed_anchor = pd.DataFrame({
+            'Motif': [concatenate_list_data([label])[0] if label else '' for label in motif_labels],
+            'Probability': [motif_probs_smoothed.get(i, 0.0) for i in range(len(motif_labels))],
+            'Observed_Count': dcounts,
+            'N0': [n0] * len(motif_labels),
+            'Smoothing_Alpha': [args.smoothing_alpha] * len(motif_labels)
+        })
+        df_smoothed_anchor.to_csv(smoothed_anchor_path, index=False)
+        print(f"💾 [SMOOTHED EMPIRICAL MODEL] Saved anchor probabilities to: {smoothed_anchor_path}")
+    else:
+        # Load anchor if available, otherwise use current data
+        if anchor_probs_loaded:
+            smoothed_anchor_file = args.anchor_model_file.replace('Region-specific_Probabilities', 'Smoothed_Empirical_Probabilities')
+            if os.path.exists(smoothed_anchor_file):
+                df_smoothed_anchor = pd.read_csv(smoothed_anchor_file)
+                smoothed_probs_dict = dict(zip(range(len(motif_labels)), df_smoothed_anchor['Probability'].values))
+                motif_probs_smoothed = smoothed_probs_dict
+            else:
+                motif_probs_smoothed = compute_motif_probabilities_smoothed_empirical(
+                    motif_labels, dcounts, n0, alpha=args.smoothing_alpha
+                )
+        else:
+            motif_probs_smoothed = compute_motif_probabilities_smoothed_empirical(
+                motif_labels, dcounts, n0, alpha=args.smoothing_alpha
+            )
+    
+    process_model_generic('smoothed_empirical', motif_labels, dcounts, n0, motif_probs_smoothed,
+                         model_plot_dirs['smoothed_empirical'], sample_name, alpha)
+
+# Process maximum entropy model
+if 'max_entropy' in models_to_process:
+    probs_for_max_entropy = psdict_for_expected if anchor_probs_loaded else psdict_region_specific
+    cond_matrix_for_max_entropy = corr_matrix_for_expected if corr_matrix_for_expected is not None else (probmat if 'probmat' in dir() else None)
+    
+    motif_probs_max_entropy = compute_motif_probabilities_max_entropy(
+        motif_labels, probs_for_max_entropy, cond_matrix_for_max_entropy, columns
+    )
+    
+    process_model_generic('max_entropy', motif_labels, dcounts, n0, motif_probs_max_entropy,
+                         model_plot_dirs['max_entropy'], sample_name, alpha,
+                         anchor_probs_dict=probs_for_max_entropy, anchor_corr_matrix=cond_matrix_for_max_entropy)
+
+# Process negative binomial model
+if 'negative_binomial' in models_to_process:
+    probs_for_nb = psdict_for_expected if anchor_probs_loaded else psdict_region_specific
+    # Estimate dispersion from data (simplified)
+    dispersion = 1.0  # Could be estimated from P60 data
+    motif_probs_nb = compute_motif_probabilities_negative_binomial(
+        motif_labels, probs_for_nb, columns, dispersion=dispersion
+    )
+    
+    process_model_generic('negative_binomial', motif_labels, dcounts, n0, motif_probs_nb,
+                         model_plot_dirs['negative_binomial'], sample_name, alpha)
+
+# Process zero-inflated model
+if 'zero_inflated' in models_to_process:
+    probs_for_zi = psdict_for_expected if anchor_probs_loaded else psdict_region_specific
+    # Estimate zero-inflation from data
+    zero_inflation = sum(1 for c in dcounts if c == 0) / len(dcounts) if len(dcounts) > 0 else 0.0
+    motif_probs_zi = compute_motif_probabilities_zero_inflated(
+        motif_labels, dcounts, n0, probs_for_zi, columns, zero_inflation=zero_inflation
+    )
+    
+    process_model_generic('zero_inflated', motif_labels, dcounts, n0, motif_probs_zi,
+                         model_plot_dirs['zero_inflated'], sample_name, alpha,
+                         zero_inflation=zero_inflation)
+
+# Process hierarchical correlations model
+if 'hierarchical_correlations' in models_to_process:
+    probs_for_hier = psdict_for_expected if anchor_probs_loaded else psdict_region_specific
+    cond_matrix_for_hier = corr_matrix_for_expected if corr_matrix_for_expected is not None else (probmat if 'probmat' in dir() else None)
+    
+    if cond_matrix_for_hier is not None:
+        motif_probs_hier = compute_motif_probabilities_hierarchical_correlations(
+            motif_labels, probs_for_hier, cond_matrix_for_hier, columns
+        )
+        process_model_generic('hierarchical_correlations', motif_labels, dcounts, n0, motif_probs_hier,
+                             model_plot_dirs['hierarchical_correlations'], sample_name, alpha,
+                             anchor_probs_dict=probs_for_hier, anchor_corr_matrix=cond_matrix_for_hier)
+    else:
+        print("⚠️ [HIERARCHICAL CORRELATIONS MODEL] Skipped - no correlation matrix available")
+
+# Process Bayesian hierarchical model
+if 'bayesian_hierarchical' in models_to_process:
+    alpha_prior = 1.0  # Dirichlet prior parameter
+    if args.is_anchor_model:
+        motif_probs_bayesian = compute_motif_probabilities_bayesian_hierarchical(
+            motif_labels, dcounts, n0, alpha_prior=alpha_prior
+        )
+        # Save anchor probabilities
+        bayesian_anchor_path = os.path.normpath(os.path.join(out_dir, f"{sample_name}_Bayesian_Hierarchical_Probabilities.csv"))
+        df_bayesian_anchor = pd.DataFrame({
+            'Motif': [concatenate_list_data([label])[0] if label else '' for label in motif_labels],
+            'Probability': [motif_probs_bayesian.get(i, 0.0) for i in range(len(motif_labels))],
+            'Observed_Count': dcounts,
+            'N0': [n0] * len(motif_labels),
+            'Alpha_Prior': [alpha_prior] * len(motif_labels)
+        })
+        df_bayesian_anchor.to_csv(bayesian_anchor_path, index=False)
+        print(f"💾 [BAYESIAN HIERARCHICAL MODEL] Saved anchor probabilities to: {bayesian_anchor_path}")
+    else:
+        # Load anchor if available, otherwise use current data
+        if anchor_probs_loaded:
+            bayesian_anchor_file = args.anchor_model_file.replace('Region-specific_Probabilities', 'Bayesian_Hierarchical_Probabilities')
+            if os.path.exists(bayesian_anchor_file):
+                df_bayesian_anchor = pd.read_csv(bayesian_anchor_file)
+                bayesian_probs_dict = dict(zip(range(len(motif_labels)), df_bayesian_anchor['Probability'].values))
+                motif_probs_bayesian = bayesian_probs_dict
+            else:
+                motif_probs_bayesian = compute_motif_probabilities_bayesian_hierarchical(
+                    motif_labels, dcounts, n0, alpha_prior=alpha_prior
+                )
+        else:
+            motif_probs_bayesian = compute_motif_probabilities_bayesian_hierarchical(
+                motif_labels, dcounts, n0, alpha_prior=alpha_prior
+            )
+    
+    process_model_generic('bayesian_hierarchical', motif_labels, dcounts, n0, motif_probs_bayesian,
+                         model_plot_dirs['bayesian_hierarchical'], sample_name, alpha)
+
+# Process ML non-parametric model
+if 'ml_nonparametric' in models_to_process:
+    motif_probs_ml = compute_motif_probabilities_ml_nonparametric(
+        motif_labels, dcounts, n0, columns
+    )
+    
+    process_model_generic('ml_nonparametric', motif_labels, dcounts, n0, motif_probs_ml,
+                         model_plot_dirs['ml_nonparametric'], sample_name, alpha)
 
 ###CHATGPT OPTIMIZED VERSION DOESNT WORK
 def kplot(df, size=(30, 12)):

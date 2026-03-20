@@ -151,3 +151,5 @@ class ReviewStep(ctk.CTkFrame):
             error_msg = "Configuration errors:\n" + "\n".join(f"  - {e}" for e in errors)
             return False, error_msg
         return True, None
+
+

@@ -802,8 +802,10 @@ def main():
         output_dir = script_dir.parent / "outputs" / "08_motif_clustering"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Process both models separately
-    models_to_process = ['uniform', 'region_specific']
+    # Process all three models separately
+    models_to_process = ['uniform', 'region_specific', 'correlated', 'empirical', 'smoothed_empirical', 
+                     'max_entropy', 'hierarchical_correlations', 'negative_binomial', 'zero_inflated',
+                     'bayesian_hierarchical', 'ml_nonparametric', 'proportional_effectsize']
     
     # Check if input_dir contains model subdirectories
     input_base_dir = Path(args.input_dir) if args.input_dir else script_dir.parent / "outputs" / "07_motif_significange_trajectories"

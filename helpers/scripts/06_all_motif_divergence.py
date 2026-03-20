@@ -39,8 +39,10 @@ else:
     base_output_dir = script_dir.parent / "outputs" / "06_all_motif_divergence"
 os.makedirs(base_output_dir, exist_ok=True)
 
-# Process both models separately
-models_to_process = ['uniform', 'region_specific']
+# Process all three models separately
+models_to_process = ['uniform', 'region_specific', 'correlated', 'empirical', 'smoothed_empirical', 
+                     'max_entropy', 'hierarchical_correlations', 'negative_binomial', 'zero_inflated',
+                     'bayesian_hierarchical', 'ml_nonparametric']
 
 for model_type in models_to_process:
     print("\n" + "="*80)

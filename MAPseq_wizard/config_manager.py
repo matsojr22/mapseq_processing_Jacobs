@@ -50,7 +50,7 @@ class ConfigManager:
                 },
             },
             'helper_scripts': {
-                'enabled': ['01', '02', '03', '04', '05', '06', '07', '08', '09', '13'],
+                'enabled': ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '13'],
                 'base_output_dir': str(repo_root / '02_output'),
             },
             'quality_control': {
@@ -264,3 +264,5 @@ class ConfigManager:
                     errors.append(f"Sample {sample.get('name', 'unknown')} in {age_group} is missing labels")
         
         return len(errors) == 0, errors
+
+

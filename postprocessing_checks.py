@@ -94,6 +94,12 @@ EXPECTED_HELPER_OUTPUTS = {
         'min_files': 20,
         'expected_patterns': ['*.svg'],
         'has_model_subdirs': False
+    },
+    '10_plot_per_cell_projection_strength_across_ages': {
+        'dir': 'helpers/outputs/10_plot_per_cell_projection_strength_across_ages',
+        'min_files': 26,
+        'expected_patterns': ['*.svg'],
+        'has_model_subdirs': False
     }
 }
 
@@ -126,7 +132,20 @@ class QualityControlChecker:
         
         self.animal_outcomes = {}
         self.unexpected_failures = []
-    
+
+    def _get_output_root(self):
+        """Return the output root (directory containing age dirs and helpers).
+        When base_output_dir is set and contains p12_anchor, p20_anchor, or p60_anchor,
+        return the path up to and including that segment so helper paths use the anchor tree.
+        """
+        if self.base_output_dir is None:
+            return self.repo_root / "02_output"
+        base_path = Path(self.base_output_dir)
+        for i, part in enumerate(base_path.parts):
+            if part in ('p12_anchor', 'p20_anchor', 'p60_anchor'):
+                return Path(*base_path.parts[:i + 1])
+        return self.repo_root / "02_output"
+
     def find_log_file(self):
         """Find the most recent processing log file"""
         if self.log_file:
@@ -455,6 +474,7 @@ class QualityControlChecker:
             '07_motif_significange_trajectories.py': 'helpers/outputs/07_motif_significange_trajectories',
             '08_motif_clustering.py': 'helpers/outputs/08_motif_clustering',
             '09_plot_normalized_projection_strength_data.py': 'helpers/outputs/09_plot_normalized_projection_strength_data',
+            '10_plot_per_cell_projection_strength_across_ages.py': 'helpers/outputs/10_plot_per_cell_projection_strength_across_ages',
         }
         
         for script, output_dir in helper_scripts.items():
@@ -690,8 +710,9 @@ class QualityControlChecker:
                         break
                 
                 if parameterization:
-                    # Look in parameterization-specific helper directory
-                    output_dir = self.repo_root / "02_output" / f"{parameterization}_helpers" / script_name
+                    # Look in parameterization-specific helper directory (under output root so anchor layout works)
+                    output_root = self._get_output_root()
+                    output_dir = output_root / f"{parameterization}_helpers" / script_name
                 else:
                     # Fall back to default location
                     output_dir = self.repo_root / config['dir']

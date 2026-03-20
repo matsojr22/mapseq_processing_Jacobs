@@ -31,6 +31,11 @@ BASE_DIR = str(DEFAULT_BASE_DIR)
 # Results directory for saving outputs (relative to helpers directory)
 RESULTS_DIR = str(Path(__file__).parent.parent / "outputs" / "01_motif_analysis_per_animal")
 
+# Domain normalization and replicate export are aligned with original motif_analysis_per_animal.py:
+# - Domain = number of regions (1 + motif.count("+") for +-joined labels; bracket-list uses len(ast.literal_eval)).
+# - Domains 4 and 5 are excluded; only 1,2,3 used. Animal jr0420 excluded from domain data (Option A).
+# See comment block before "FIGURE 2: Domain-wise Normalization" and inline comments there for repair context.
+
 # To use a different directory, uncomment and modify the line below:
 # set_base_directory("/path/to/your/motif_observed_summary")
 
@@ -752,31 +757,34 @@ def generate_per_age_plots(datasets, all_motifs, output_base_dir, normalization_
         if normalization_type == "global":
             age_summary_stats = calculate_summary_stats(single_age_datasets, all_motifs, "global")
         else:
-            # For domain normalization, we need to calculate domain-normalized frequencies
-            # Reuse the domain calculation logic from main script
+            # For domain normalization, reuse logic aligned with original motif_analysis_per_animal.py:
+            # domain count from +-joined labels, domains 4 and 5 removed, jr0420 excluded.
             motif_domains = {}
             for motif in all_motifs:
                 if motif.startswith("["):
                     count = len(ast.literal_eval(motif))
                 else:
-                    count = 1
+                    count = 1 + motif.count("+") if motif and str(motif).strip() else 1
                 if count not in motif_domains:
                     motif_domains[count] = []
                 motif_domains[count].append(motif)
-            
+            for d in [4, 5]:
+                if d in motif_domains:
+                    motif_domains.pop(d)
+
             # Calculate domain-wise normalized frequencies for this age
             domain_data = []
             for _, row in df.iterrows():
                 motif = row["motif label_Clean"]
                 animal_id = row["Animal_ID"]
-                
+                if animal_id == "jr0420":
+                    continue
                 # Find which domain this motif belongs to
                 motif_domain = None
                 for domain, domain_motifs in motif_domains.items():
                     if motif in domain_motifs:
                         motif_domain = domain
                         break
-                
                 if motif_domain is not None:
                     # Calculate domain total for this animal
                     animal_domain_data = df[(df["Animal_ID"] == animal_id)]
@@ -786,13 +794,10 @@ def generate_per_age_plots(datasets, all_motifs, output_base_dir, normalization_
                         )
                     ]
                     domain_total = domain_motifs_for_animal["observed"].sum()
-                    
-                    # Calculate domain-wise normalized frequency
                     if domain_total > 0:
                         domain_normalized_freq = row["observed"] / domain_total
                     else:
                         domain_normalized_freq = 0
-                    
                     domain_data.append({
                         "motif label_Clean": motif,
                         "domain_normalized_freq": domain_normalized_freq,
@@ -927,6 +932,8 @@ parser.add_argument('--base_output_dir', type=str, default=None,
                    help='Base output directory for processing results (default: REPO_ROOT/02_output). Helper outputs will be saved in a subdirectory matching the parameterization.')
 parser.add_argument('--helper_output_dir', type=str, default=None,
                    help='Directory for helper script outputs (default: helpers/outputs/01_motif_analysis_per_animal)')
+parser.add_argument('--export_wide_for_prism', action='store_true',
+                   help='After writing long-format CSVs, also write wide-format TSVs for Prism (per model).')
 args = parser.parse_args()
 output_mode = args.output_mode
 
@@ -953,8 +960,10 @@ if args.helper_output_dir:
             print(f"Filtering by parameterization: {parameterization_filter}")
             break
 
-# Process both models separately
-models_to_process = ['uniform', 'region_specific']
+# Process all models separately
+models_to_process = ['uniform', 'region_specific', 'correlated', 'empirical', 'smoothed_empirical', 
+                     'max_entropy', 'hierarchical_correlations', 'negative_binomial', 'zero_inflated',
+                     'bayesian_hierarchical', 'ml_nonparametric']
 
 for model_type in models_to_process:
     print("\n" + "="*80)
@@ -1112,6 +1121,12 @@ for model_type in models_to_process:
     # =============================================================================
     # FIGURE 2: Domain-wise Normalization (each motif length group sums to 1)
     # =============================================================================
+    # ALIGNMENT WITH ORIGINAL motif_analysis_per_animal.py (see plan helper_01_match_original_script_logic):
+    # - Domain count: pipeline motifs are +-joined (e.g. "al+am"); use 1 + motif.count("+")
+    #   so domain = number of regions. Original used bracket-list format and len(ast.literal_eval).
+    # - Domains 4 and 5 are removed so only domains 1,2,3 are used for domain normalization.
+    # - Animal jr0420 is excluded from domain normalization (Option A); domain_normalized_freq
+    #   is NaN for jr0420 in individual_replicates_per_animal_domain.csv.
 
     # Group motifs by count (domain)
     motif_domains = {}
@@ -1119,10 +1134,17 @@ for model_type in models_to_process:
         if motif.startswith("["):
             count = len(ast.literal_eval(motif))
         else:
-            count = 1
+            # +-joined format from pipeline (e.g. "al+am" -> 2 regions)
+            count = 1 + motif.count("+") if motif and str(motif).strip() else 1
         if count not in motif_domains:
             motif_domains[count] = []
         motif_domains[count].append(motif)
+
+    # Match original: use only domains 1, 2, 3 for domain normalization (remove 4 and 5)
+    domains_to_remove = [4, 5]
+    for d in domains_to_remove:
+        if d in motif_domains:
+            motif_domains.pop(d)
 
     # Sort domains and motifs within domains (preserve original order within domains)
     sorted_domains = sorted(motif_domains.keys())
@@ -1151,6 +1173,10 @@ for model_type in models_to_process:
         for _, row in df.iterrows():
             motif = row["motif label_Clean"]
             animal_id = row["Animal_ID"]
+
+            # Match original: exclude jr0420 from domain normalization (Option A)
+            if animal_id == "jr0420":
+                continue
 
             # Find which domain this motif belongs to
             motif_domain = None
@@ -1189,6 +1215,46 @@ for model_type in models_to_process:
                 )
 
         domain_datasets[timepoint] = pd.DataFrame(domain_data)
+
+    # Export individual replicate values: one CSV per normalization type (global vs domain).
+    # The cross-age domain plot (motif_analysis_domain_normalization.svg) uses domain_normalized_freq;
+    # the global plot uses normalized_freq. Each file is named for the data it contains.
+    long_global = pd.concat(
+        [
+            df[["Timepoint", "Animal_ID", "motif label_Clean", "normalized_freq"]].rename(
+                columns={"motif label_Clean": "Motif"}
+            )
+            for df in datasets.values()
+        ],
+        ignore_index=True,
+    )
+    long_domain = pd.concat(
+        [
+            df[["Timepoint", "Animal_ID", "motif label_Clean", "domain_normalized_freq"]].rename(
+                columns={"motif label_Clean": "Motif"}
+            )
+            for df in domain_datasets.values()
+        ],
+        ignore_index=True,
+    )
+    path_global = os.path.join(model_results_dir, "individual_replicates_per_animal_global.csv")
+    long_global.to_csv(path_global, index=False)
+    print(f"Saved individual replicates (global): {path_global}")
+    path_domain = os.path.join(model_results_dir, "individual_replicates_per_animal_domain.csv")
+    long_domain.to_csv(path_domain, index=False)
+    print(f"Saved individual replicates (domain): {path_domain}")
+
+    if getattr(args, "export_wide_for_prism", False):
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from transform_replicates_to_wide import write_wide_for_prism
+        try:
+            out_global = write_wide_for_prism(path_global, value_column="normalized_freq")
+            print(f"Saved wide Prism (global): {out_global}")
+            out_domain = write_wide_for_prism(path_domain, value_column="domain_normalized_freq")
+            print(f"Saved wide Prism (domain): {out_domain}")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Warning: wide-for-Prism export failed: {e}")
 
     # Calculate summary statistics for domain-wise normalization
     domain_summary_stats = {}

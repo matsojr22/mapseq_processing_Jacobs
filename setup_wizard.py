@@ -276,6 +276,7 @@ def print_post_installation_instructions(repo_path):
         "07_motif_significange_trajectories.py",
         "08_motif_clustering.py",
         "09_plot_normalized_projection_strength_data.py",
+        "10_plot_per_cell_projection_strength_across_ages.py",
         "13_aggregate_projection_summaries.py"
     ]
     for script in helper_scripts:

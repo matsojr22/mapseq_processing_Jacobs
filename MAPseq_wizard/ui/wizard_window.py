@@ -182,3 +182,5 @@ class WizardWindow(ctk.CTk):
         """Handle cancel"""
         if messagebox.askyesno("Confirm", "Are you sure you want to cancel? Unsaved changes will be lost."):
             self.destroy()
+
+

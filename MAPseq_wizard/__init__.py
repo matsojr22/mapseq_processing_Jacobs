@@ -5,3 +5,5 @@ A comprehensive wizard interface for configuring and executing the entire MAPseq
 """
 
 __version__ = "1.0.0"
+
+

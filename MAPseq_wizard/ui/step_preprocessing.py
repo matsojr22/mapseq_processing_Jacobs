@@ -549,3 +549,5 @@ class PreprocessingStep(ctk.CTkFrame):
                 return False, f"Cohort '{cohort_name}': At least one file must have a column mapped to 'barcodes'"
         
         return True, None
+
+

@@ -78,7 +78,13 @@ python helpers/scripts/02_projection_analysis.py --base_output_dir /Users/matt/g
 python helpers/scripts/03_composition.py --base_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/03_composition
 python helpers/scripts/04_proportions_over_time_stats.py --base_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/04_proportions_over_time_stats
 python helpers/scripts/05_motif_analysis.py --base_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/05_motif_analysis
+# Helper 18: mean-JSD transition tests (motif-level JS from helper 05 outputs)
+mkdir -p /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/18_mean_jsd_transition_tests
+python helpers/scripts/18_mean_jsd_transition_tests.py --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/18_mean_jsd_transition_tests
 python helpers/scripts/06_all_motif_divergence.py --input_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/05_motif_analysis --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/06_all_motif_divergence
+# Helper 17: cross-source JSD summary; requires helper 01 and 05 outputs
+mkdir -p /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/17_jsd_cross_source
+python helpers/scripts/17_jsd_cross_source_summary.py --base_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/17_jsd_cross_source
 mkdir -p /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/07_input
 # Copy uniform model upsetplot files
 find /Users/matt/git/mapseq_processing_Jacobs/02_output -type f \( -path '*/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/uniform/*_ALL_*_filters_upsetplot_uniform.csv' -o -path '*/05.HAN_filter_parameters_i300_r10_t10_u5/analysis/uniform/*_alL_*_filters_upsetplot_uniform.csv' \) | xargs -I {} cp {} /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/07_input/
@@ -107,7 +113,8 @@ python postprocessing_checks.py --repo_root /Users/matt/git/mapseq_processing_Ja
 # Note: This script aggregates data from ALL parameterizations, so it's run once
 # after all parameterizations have been processed
 
-python helpers/scripts/13_aggregate_projection_summaries.py --base_dir /Users/matt/git/mapseq_processing_Jacobs --parameterization 05.HAN_filter_parameters_i300_r10_t10_u5 --output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/13_aggregate_projection_summaries
+python helpers/scripts/13_aggregate_projection_summaries.py --base_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/13_aggregate_projection_summaries
+python helpers/scripts/16_power_analysis.py --base_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output --helper_output_dir /Users/matt/git/mapseq_processing_Jacobs/02_output/05.HAN_filter_parameters_i300_r10_t10_u5_helpers/16_power_analysis --model_type uniform
 
 # ============================================================================
 # Generate Figure Summary Tiffs

@@ -490,42 +490,9 @@ python postprocessing_checks.py [--repo_root REPO_ROOT] [--log_file LOG_FILE] [-
 python postprocessing_checks.py --base_output_dir 02_output/p12/05.HAN_filter_parameters_i300_r10_t10_u5
 ```
 
-### figure_generation/generate_figure_from_outputs.py
-
-Generates publication-ready figure matrices from pipeline outputs.
-
-**Purpose:**
-- Create multi-panel figures organized by age group
-- Combine outputs from multiple scripts into cohesive figure layouts
-- Support multiple parameterizations
-
-**Usage:**
-```bash
-python figure_generation/generate_figure_from_outputs.py [--parameterization PARAM] [--output_dir OUTPUT_DIR]
-```
-
-**Arguments:**
-- **--parameterization** (optional): Specific parameterization to process (default: all)
-- **--output_dir** (optional): Output directory for generated figures (default: `figure_generation/generated_figures/`)
-
-**Features:**
-- **Multi-panel layout**: Creates figures with 4 columns (one per age group: p3, p12, p20, p60)
-- **Multiple plot types**: Includes pie charts, heatmaps, significance plots, and probability heatmaps
-- **Automatic file discovery**: Finds relevant output files from processing and helper scripts
-- **High-quality output**: Generates PDF and PNG formats suitable for publication
-
-**Output:**
-- Figure matrices saved to `figure_generation/generated_figures/`
-- Organized by parameterization and plot type
-
-**Example:**
-```bash
-python figure_generation/generate_figure_from_outputs.py --parameterization 05.HAN_filter_parameters_i300_r10_t10_u5
-```
-
 ### conclusions/scripts/extract_stability_data.py
 
-Extracts stability analysis data from pipeline outputs for downstream analysis.
+Extracts stability analysis data from pipeline outputs for downstream analysis. (Project specific and not universal)
 
 **Purpose:**
 - Extract Kruskal-Wallis test results from script 01
@@ -550,39 +517,6 @@ python conclusions/scripts/extract_stability_data.py [--base_dir BASE_DIR] [--ou
 **Example:**
 ```bash
 python conclusions/scripts/extract_stability_data.py --base_dir 02_output --output_file stability_data.json
-```
-
-### conclusions/scripts/generate_conclusions.py
-
-Generates comprehensive conclusions markdown document from extracted stability data.
-
-**Purpose:**
-- Read extracted stability data JSON
-- Format statistical results with proper significance indicators
-- Generate markdown document with findings about temporal stability
-
-**Usage:**
-```bash
-python conclusions/scripts/generate_conclusions.py [--input_file INPUT_FILE] [--output_file OUTPUT_FILE]
-```
-
-**Arguments:**
-- **--input_file** (optional): Input JSON file from extract_stability_data.py (default: `extracted_stability_data.json`)
-- **--output_file** (optional): Output markdown file path (default: `conclusions.md`)
-
-**Features:**
-- **Statistical formatting**: Formats p-values with significance indicators (*, **, ***)
-- **Summary statistics**: Includes counts, percentages, and descriptive statistics
-- **Structured sections**: Organizes findings into clear sections (Kruskal-Wallis, transitions, motifs, etc.)
-- **Model comparison**: Presents results for both uniform and region-specific models
-
-**Output:**
-- Markdown document with comprehensive analysis findings
-- Suitable for inclusion in manuscripts or reports
-
-**Example:**
-```bash
-python conclusions/scripts/generate_conclusions.py --input_file stability_data.json --output_file analysis_conclusions.md
 ```
 
 ### helpers/scripts/13_aggregate_projection_summaries.py
